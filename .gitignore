@@ -1,0 +1,14 @@
+# Keil MDK-ARM 忽略文件
+MDK-ARM/Objects/
+MDK-ARM/Listings/
+*.bak
+*.dep
+*.uvgui.*
+*.uvguix.*
+*.uvoptx
+*.JLinkScript
+
+# 其他不需要的杂项
+.vscode/
+*.bin
+*.hex
