@@ -32,3 +32,8 @@ ti_cqupt_2026g\main.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h
 ti_cqupt_2026g\main.o: ../Core/Inc/dma.h
 ti_cqupt_2026g\main.o: ../Core/Inc/usart.h
 ti_cqupt_2026g\main.o: ../Core/Inc/gpio.h
+ti_cqupt_2026g\main.o: ../User/app/app_process.h
+ti_cqupt_2026g\main.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
+ti_cqupt_2026g\main.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdlib.h
+ti_cqupt_2026g\main.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
+ti_cqupt_2026g\main.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdarg.h

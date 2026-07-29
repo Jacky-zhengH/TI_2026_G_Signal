@@ -13,7 +13,6 @@ static volatile uint8_t hmi_cmd_data = 0; // 最新命令字节
 //=========================================================================================================
 // 1. 基础功能函数
 //=========================================================================================================
-
 /**
  * @name HMI_Process_Init
  * @brief 启动应用层接收与测量任务框架
@@ -81,17 +80,21 @@ static void Task_Button_Response(void)
 
     HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
 
-    if (cmd == 'A')
+    if (cmd == 0xA1)
     {
-        Debug_printf("[KEY]KEY=B cmd=\"process B!\" \r\n");
+        Debug_printf("[KEY]KEY=b_wave1 cmd=\"single-cycle waveform;\" \r\n");
     }
-    else if (cmd == 'B')
+    else if (cmd == 0xA3)
     {
-        Debug_printf("[KEY]KEY=B cmd=\"process B!\" \r\n");
+        Debug_printf("[KEY]KEY=b_wave3 cmd=\"three-cycle waveform;\" \r\n");
+    }
+    else if (cmd == 0xAF)
+    {
+        Debug_printf("[KEY]KEY=b_spec cmd=\"turn to frequency-domain analysis;\" \r\n");
     }
     else
     {
-        Debug_printf("[KEY] Unknown cmd\r\n");
+        Debug_printf("[KEY] error:Unknown cmd;\r\n");
     }
 }
 
@@ -105,9 +108,9 @@ static void Task_Button_Response(void)
  */
 void App_Main_Process_Poll(void)
 {
-    HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-    HAL_Delay(500);
-    // Task_Button_Response();
+    // HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+    // HAL_Delay(500);
+    Task_Button_Response();
 }
 
 //=========================================================================================================

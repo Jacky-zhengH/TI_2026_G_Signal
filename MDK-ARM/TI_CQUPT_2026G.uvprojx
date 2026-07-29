@@ -10,6 +10,7 @@
       <TargetName>TI_CQUPT_2026G</TargetName>
       <ToolsetNumber>0x4</ToolsetNumber>
       <ToolsetName>ARM-ADS</ToolsetName>
+      <pCCUsed>5060960::V5.06 update 7 (build 960)::.\ARMCC</pCCUsed>
       <uAC6>0</uAC6>
       <TargetOption>
         <TargetCommonOption>
@@ -338,7 +339,7 @@
               <MiscControls></MiscControls>
               <Define>USE_HAL_DRIVER,STM32F407xx,ARM_MATH_CM4,__FPU_PRESENT</Define>
               <Undefine></Undefine>
-              <IncludePath>../Core/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F4xx/Include;../Drivers/CMSIS/Include;../Middlewares/ST/ARM/DSP/Inc;..\User;..\User\app;..\User\alog;..\User\bsp</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc;../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F4xx/Include;../Drivers/CMSIS/Include;../Middlewares/ST/ARM/DSP/Inc;../User;../User/app;../User/alog;../User/bsp</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -510,6 +511,55 @@
           </Files>
         </Group>
         <Group>
+          <GroupName>User</GroupName>
+        </Group>
+        <Group>
+          <GroupName>User/app</GroupName>
+          <Files>
+            <File>
+              <FileName>app_process.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\app\app_process.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_process.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\User\app\app_process.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>User/bsp</GroupName>
+          <Files>
+            <File>
+              <FileName>bsp_ad9220.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\bsp\bsp_ad9220.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_ad9220.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\User\bsp\bsp_ad9220.h</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_ad603.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\bsp\bsp_ad603.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_ad603.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\User\bsp\bsp_ad603.h</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>User/alog</GroupName>
+        </Group>
+        <Group>
+          <GroupName>::CMSIS</GroupName>
+        </Group>
+        <Group>
           <GroupName>Middlewares/Library/DSP Library/DSP Library</GroupName>
           <GroupOption>
             <CommonProperty>
@@ -606,33 +656,6 @@
               </FileOption>
             </File>
           </Files>
-        </Group>
-        <Group>
-          <GroupName>User</GroupName>
-        </Group>
-        <Group>
-          <GroupName>User/app</GroupName>
-          <Files>
-            <File>
-              <FileName>app_process.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\User\app\app_process.c</FilePath>
-            </File>
-            <File>
-              <FileName>app_process.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\User\app\app_process.h</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
-          <GroupName>User/bsp</GroupName>
-        </Group>
-        <Group>
-          <GroupName>User/alog</GroupName>
-        </Group>
-        <Group>
-          <GroupName>::CMSIS</GroupName>
         </Group>
       </Groups>
     </Target>
