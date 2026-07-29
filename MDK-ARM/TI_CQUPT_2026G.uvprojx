@@ -723,6 +723,18 @@
         </Group>
         <Group>
           <GroupName>User/alog</GroupName>
+          <Files>
+            <File>
+              <FileName>alog_signal.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\alog\alog_signal.c</FilePath>
+            </File>
+            <File>
+              <FileName>alog_signal.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\User\alog\alog_signal.h</FilePath>
+            </File>
+          </Files>
         </Group>
         <Group>
           <GroupName>Middlewares/Library/DSP Library/DSP Library</GroupName>

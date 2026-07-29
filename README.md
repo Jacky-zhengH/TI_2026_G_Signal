@@ -1,328 +1,405 @@
-# 2026 电赛 G 题：STM32F407 配置与 TJC8048X270 UI 建议
+# STM32F407 + AD9220 + AD603 配置与引脚建议（更新版）
 
-> 目标：以 STM32F407 + AD9220 + TJC8048X270 完成周期信号测量分析装置。配置遵循电赛原则：少模块、少状态、先通链路、可快速定位问题。
+适用工程：`Jacky-zhengH/TI_2026_G_Signal`
 
-## 1. 先确定的总体约束
+目标：在保留现有 `app_process.c` 中 USART1/USART3 与串口屏按钮逻辑的前提下，增加 AD9220 并行采集、AD603 程控增益、8 阶低通补偿和 CMSIS-DSP 频域分析。
 
-- 软件分为 `bsp / alog / app` 三层。
-- 不使用 FreeRTOS；不使用动态内存；不建立消息总线、设备注册表或多层状态机。
-- `USART1` 和 `USART3` 已经集成到 `app_process`，保持现有驱动及屏幕按键解析逻辑，不做重构。
-- AD9220 采集必须使用定时器 + DMA，不使用“每个采样点进入一次中断”的参考例程方式。
-- 算法使用 CMSIS-DSP 的 4096 点实数 FFT；数据结果使用 `float32_t`。
-- 首先跑通 `2 MSPS + 4096 点` 基础方案；第三项抗 1 MHz 干扰不足时，再启用 `4 MSPS 原始采集 + FIR 二抽一 + 4096 点 FFT`。
-
-## 2. 与当前仓库保持一致的内容
-
-当前仓库已经配置：
-
-- STM32F407，主频目标 168 MHz；
-- `USART1`：PA9/PA10；
-- `USART3`：PB10/PB11；
-- GPIO、DMA、USART 初始化函数已经由 CubeMX 生成；
-- CMSIS-DSP 头文件和 Cortex-M4F DSP 库已经出现在工程配置中。
-
-保持下面的调用关系：
-
-```c
-int main(void)
-{
-    HAL_Init();
-    SystemClock_Config();
-
-    MX_GPIO_Init();
-    MX_DMA_Init();
-    MX_TIM1_Init();
-    MX_USART1_UART_Init();
-    MX_USART3_UART_Init();
-
-    APP_Process_Init();
-
-    while (1)
-    {
-        APP_Process_Run();
-    }
-}
-```
-
-`main.c` 只负责初始化和调用，不放采样、FFT、屏幕协议或参数计算代码。
+> 电赛原则：先跑通固定增益和固定采样，再增加自动增益；所有采集、计算和显示均采用简单顺序流程，不引入 RTOS、消息队列和复杂多层状态机。
 
 ---
 
-# 3. 推荐引脚分配
+## 1. 本次更新的关键结论
 
-## 3.1 AD9220 并行数据与时钟
-
-为了一次读取 `GPIOC->IDR` 得到完整 12 位数据，推荐把 12 根数据线连续放在 PC0~PC11。
-
-| 功能       | STM32F407 引脚 | CubeMX 模式  | 说明                    |
-| ---------- | -------------- | ------------ | ----------------------- |
-| AD9220 D0  | PC0            | GPIO_Input   | ADC 最低位              |
-| AD9220 D1  | PC1            | GPIO_Input   |                         |
-| AD9220 D2  | PC2            | GPIO_Input   |                         |
-| AD9220 D3  | PC3            | GPIO_Input   |                         |
-| AD9220 D4  | PC4            | GPIO_Input   |                         |
-| AD9220 D5  | PC5            | GPIO_Input   |                         |
-| AD9220 D6  | PC6            | GPIO_Input   |                         |
-| AD9220 D7  | PC7            | GPIO_Input   |                         |
-| AD9220 D8  | PC8            | GPIO_Input   |                         |
-| AD9220 D9  | PC9            | GPIO_Input   |                         |
-| AD9220 D10 | PC10           | GPIO_Input   |                         |
-| AD9220 D11 | PC11           | GPIO_Input   | ADC 最高位              |
-| AD9220 OTR | PC12           | GPIO_Input   | 高电平表示过量程        |
-| AD9220 CLK | PA8            | TIM1_CH1 PWM | 2 MHz 或 4 MHz 采样时钟 |
-
-GPIO 建议：
-
-- PC0~PC12：`No pull`；
-- GPIO 速度对输入无意义，保持默认即可；
-- `ADC_CLK` PA8：复用推挽、Very High Speed、No Pull；
-- 数据线尽量等长、短、同一排连接；时钟线旁边配地线，避免长杜邦线平行串扰。
-
-读取方式：
-
-```c
-uint16_t code = (uint16_t)(GPIOC->IDR & 0x0FFFU);
-```
-
-参考程序的电压换算中存在极性反向关系，因此第一次接线后必须用直流正负电压或低频正弦确认：输入上升时 ADC 码是上升还是下降。最终在 `bsp_ad9220` 中统一做一次极性处理，不要把 `4095-code` 分散到算法层。
-
-## 3.2 保留的串口引脚
-
-| 串口      | 引脚 | 现有用途      | 建议                  |
-| --------- | ---- | ------------- | --------------------- |
-| USART1_TX | PA9  | 电脑调试      | 保持现有配置          |
-| USART1_RX | PA10 | 电脑调试/命令 | 保持现有配置及 RX DMA |
-| USART3_TX | PB10 | TJC 屏幕      | 保持现有配置          |
-| USART3_RX | PB11 | TJC 按键事件  | 保持现有配置          |
-
-不要把 AD9220 数据线改到 GPIOA 或 GPIOB，否则会与现有 UART 引脚产生冲突，也失去“一次读端口”的优势。
+1. AD9220 模块默认 5 倍衰减已经焊死，输入量程约 10 Vpp。直接测量 50~250 mVpp 时 ADC 有效码数过少，因此在 AD9220 前加入 AD603-VCA 是合理的补救方案。
+2. AD603 模块外部控制电压约 0.4~1.446 V，对应标称 -20~60 dB；模块之间存在差异，必须建立本模块自己的“DAC 码值-实际增益”表。
+3. AD603 输出阻抗约 51 Ω，AD9220 模块输入阻抗约 50 Ω，二者直接连接会形成近似二分压。软件标定必须包含这约 -6 dB 的负载效应，不能只使用手册增益公式。
+4. 当前 8 阶低通实测在 500 kHz 已衰减约 15.22 dB，在 1 MHz 衰减约 43.10 dB。它对第三问抑制 `uJ` 有利，但并不是 10~500 kHz 平坦通带滤波器；必须做幅值和相位补偿。
+5. 当前仓库的 HSE 配置对板载 8 MHz 晶体是正确的：HSE 晶体模式、PLLM=8、PLLN=336、PLLP=2，系统时钟 168 MHz。
+6. 当前 GPIOC 方案不推荐继续作为 12 位 ADC 总线：PC8~PC12 与板载 TF 卡相连，且仓库中 PC0~PC3 当前被配置为输出。推荐改为 GPIOE 低 12 位连续总线。
 
 ---
 
-# 4. 时钟配置
-
-## 4.1 必须优先使用 HSE
-
-当前工程使用 HSI 经过 PLL 得到 168 MHz。开发初期可运行，但最终测频建议使用外部晶振 HSE：
-
-- 题目基频误差要求不超过 1 kHz；
-- 在 500 kHz 处，相对误差上限只有约 0.2%；
-- FFT 插值只能降低“频点量化误差”，不能修复采样时钟整体偏差；
-- HSE 通常比内部 RC 的频率稳定性更适合测量仪器。
-
-以 8 MHz HSE 为例：
-
-| 参数       |                       设置 |
-| ---------- | -------------------------: |
-| PLL Source |                        HSE |
-| PLLM       |                          8 |
-| PLLN       |                        336 |
-| PLLP       |                          2 |
-| PLLQ       |                          7 |
-| SYSCLK     |                    168 MHz |
-| AHB        |                    168 MHz |
-| APB1       |  42 MHz，定时器时钟 84 MHz |
-| APB2       | 84 MHz，定时器时钟 168 MHz |
-
-如果开发板晶振不是 8 MHz，按实际晶振重新计算，不要照抄 PLLM。
-
-## 4.2 TIM1 基础采样参数
-
-### 基础模式：2 MSPS
+## 2. 最终信号链
 
 ```text
-TIM1 clock = 168 MHz
-PSC = 0
-ARR = 83
-PWM frequency = 168 MHz / (83 + 1) = 2 MHz
-CH1 CCR1 = 42       // 约 50% 占空比，输出到 PA8
-CH3 CCR3 = 63       // 内部比较事件，延后读取稳定后的数据
+信号源/BNC
+  -> 49.9 Ω端接（建议）
+  -> 8阶低通滤波器
+  -> AD603-VCA程控增益
+  -> AD9220模块默认5倍衰减 + AD8132 + AD9220
+  -> STM32F407并行DMA采集
+  -> FFT定位 + 联合正弦拟合 + 复合频响补偿
+  -> TJC8048X270显示
 ```
 
-### 增强模式：4 MSPS 原始采样
-
-```text
-TIM1 clock = 168 MHz
-PSC = 0
-ARR = 41
-PWM frequency = 168 MHz / (41 + 1) = 4 MHz
-CH1 CCR1 = 21
-CH3 CCR3 = 31
-```
-
-CH1 输出采样时钟；CH3 不需要配置外部引脚，仅用比较事件产生 DMA 请求，使读取动作避开 AD9220 的采样边沿。
+注意：滤波器应放在 AD603 前面。这样 1 MHz 以上干扰不会先被 AD603 大幅放大，减少 AD603 和 AD9220 过载风险。
 
 ---
 
-# 5. DMA 配置：TIM1_CH3 触发读取 GPIOC->IDR
+## 3. HSE 与系统时钟检查
 
-## 5.1 推荐映射
+### 3.1 核心板硬件
 
-根据 STM32F407 的 DMA2 请求映射，选择：
+核心板原理图采用：
 
-```text
-TIM1_CH3 -> DMA2 Stream6 Channel6
-```
+- X1：8 MHz 晶体；
+- MCU OSC_IN/OSC_OUT，即 STM32F407 的 PH0/PH1；
+- 两侧负载电容均为 10 pF；
+- 不是外部有源时钟模块。
 
-理由：
-
-- 现有 USART1_RX 使用 DMA2 Stream2 Channel4；
-- 选择 Stream6 可以避免与 USART1_RX 冲突；
-- TIM1_CH3 可在时钟边沿之后触发一次 GPIO 端口读取。
-
-## 5.2 CubeMX 中的设置
-
-CubeMX 通常不能直接把 `GPIOC->IDR` 作为“外设地址”图形化配置完整，因此分两步：
-
-1. 在 TIM1 的 DMA Settings 中添加 `TIM1_CH3` DMA 请求；
-2. CubeMX 生成后，在 `bsp_ad9220.c` 中启动前设置 DMA 源地址为 `&GPIOC->IDR`。
-
-推荐 DMA 参数：
-
-| 参数                  | 设置                               |
-| --------------------- | ---------------------------------- |
-| DMA                   | DMA2 Stream6 Channel6              |
-| Direction             | Peripheral to Memory               |
-| Peripheral increment  | Disable                            |
-| Memory increment      | Enable                             |
-| Peripheral data width | Word                               |
-| Memory data width     | Word                               |
-| Mode                  | Normal                             |
-| Priority              | Very High                          |
-| FIFO                  | Disable，先求简单                  |
-| Interrupt             | Transfer Complete + Transfer Error |
-
-原始缓存：
-
-```c
-#define ADC_RAW_MAX_COUNT 8192U
-
-static uint32_t g_adc_raw[ADC_RAW_MAX_COUNT];
-```
-
-使用 32 位缓存是为了让 DMA 直接搬运整个 `GPIOC->IDR`。算法开始时再掩码低 12 位。
-
-## 5.3 重要内存限制
-
-DMA 缓冲区必须放在 SRAM1/SRAM2，不能放在 CCM RAM。
-
-- `g_adc_raw[]`：普通 SRAM，DMA 可访问；
-- FFT 工作区、窗函数、矩阵等仅由 CPU 使用的数据，可以放 CCM；
-- 不确定链接脚本时，比赛期间先全部放普通 SRAM，确认稳定后再优化。
-
-## 5.4 采集接口保持阻塞、简单
-
-```c
-bool BSP_AD9220_Capture(uint32_t *dst,
-                        uint32_t count,
-                        uint32_t timeout_ms);
-```
-
-内部步骤：
+因此 CubeMX 必须选择：
 
 ```text
-停止 TIM1
-清 DMA 标志
-设置 DMA 源 = GPIOC->IDR
-设置 DMA 目标与长度
-使能 TIM1_CH3 DMA 请求
-启动 DMA
-启动 TIM1 PWM
-等待完成标志或超时
-停止 TIM1 和 DMA
-返回成功/失败
+RCC -> High Speed Clock (HSE)
+Crystal/Ceramic Resonator
 ```
 
-DMA 中断中只做：
+不能选择 `BYPASS Clock Source`。
+
+### 3.2 当前仓库配置判断
+
+当前配置：
+
+```text
+HSE = 8 MHz
+PLLM = 8
+PLLN = 336
+PLLP = 2
+PLLQ = 4
+SYSCLK = 168 MHz
+AHB = 168 MHz
+APB1 = 42 MHz，APB1 Timer = 84 MHz
+APB2 = 84 MHz，APB2 Timer = 168 MHz
+```
+
+结论：
+
+- CPU、TIM1、USART 和 DSP 使用均正确；
+- TIM1 位于 APB2，实际定时器时钟为 168 MHz；
+- 当前 PLLQ=4 得到 84 MHz，不满足 USB/SDIO/RNG 的 48 MHz 时钟要求；本项目当前不使用这些功能，因此不影响；若以后启用 USB/SDIO，应改为 PLLQ=7。
+
+### 3.3 建议的时钟验证
+
+在第一阶段直接用示波器测量 PA8 的 ADC_CLK：
+
+```text
+目标：2.000 MHz，50%占空比
+```
+
+软件中保留：
 
 ```c
-g_adc_dma_done = true;
+#define ADC_SAMPLE_RATE_HZ 2000000.0f
 ```
 
-禁止在中断中进行 FFT、浮点运算、printf 或 TJC 发送。
+若频率计测得不完全等于 2 MHz，可把实际值写入标定参数，FFT 频率换算使用 `fs_actual`。
 
 ---
 
-# 6. CMSIS-DSP 配置
+## 4. 推荐主控引脚对应关系
 
-## 6.1 是否需要 DSP 库
+### 4.1 首选映射：GPIOE 连续 12 位总线
 
-需要。STM32F407 是 Cortex-M4F，使用 CMSIS-DSP 可以直接得到经过优化的实数 FFT、向量运算和统计函数。
+| STM32F407 引脚 | 外设/模块引脚           | 方向      | 配置                | 说明                          |
+| -------------- | ----------------------- | --------- | ------------------- | ----------------------------- |
+| PA8            | AD9220 CLK              | 输出      | TIM1_CH1 PWM        | 2 MHz、50%占空比              |
+| PE0            | AD9220 D0               | 输入      | GPIO Input, No Pull | ADC最低位                     |
+| PE1            | AD9220 D1               | 输入      | GPIO Input, No Pull |                               |
+| PE2            | AD9220 D2               | 输入      | GPIO Input, No Pull |                               |
+| PE3            | AD9220 D3               | 输入      | GPIO Input, No Pull |                               |
+| PE4            | AD9220 D4               | 输入      | GPIO Input, No Pull |                               |
+| PE5            | AD9220 D5               | 输入      | GPIO Input, No Pull |                               |
+| PE6            | AD9220 D6               | 输入      | GPIO Input, No Pull |                               |
+| PE7            | AD9220 D7               | 输入      | GPIO Input, No Pull |                               |
+| PE8            | AD9220 D8               | 输入      | GPIO Input, No Pull |                               |
+| PE9            | AD9220 D9               | 输入      | GPIO Input, No Pull |                               |
+| PE10           | AD9220 D10              | 输入      | GPIO Input, No Pull |                               |
+| PE11           | AD9220 D11              | 输入      | GPIO Input, No Pull | ADC最高位                     |
+| PE12           | AD9220 OTR              | 输入      | GPIO Input, No Pull | 过量程标志                    |
+| PE13           | TIM1_CH3                | 输出/未接 | PWM或OC触发         | 仅产生DMA请求，不连接外部模块 |
+| PA4            | AD603 P2-2 外部增益控制 | 模拟输出  | DAC_OUT1            | P2跳线帽拔下                  |
+| GND            | AD603 P2-3              | 地        | 共地                | DAC控制地                     |
+| PA9 / PA10     | TJC屏 TX/RX链路         | UART      | USART1              | 按仓库现状保留                |
+| PB10 / PB11    | PC调试串口              | UART      | USART3              | 按仓库现状保留                |
+| PC13           | 板载LED                 | 输出      | Active Low          | 可作为采集/错误指示           |
+| PH0 / PH1      | 8 MHz晶体               | RCC       | HSE Crystal         | 不作普通GPIO                  |
+| PA13 / PA14    | SWDIO/SWCLK             | 调试      | Serial Wire         | 保留下载调试                  |
 
-建议只使用以下少量接口：
+连续连接后，DMA原始值转换极其简单：
+
+```c
+uint16_t code = (uint16_t)(raw_gpioe_idr & 0x0FFFU);
+```
+
+### 4.2 不推荐继续使用当前 GPIOC 总线的原因
+
+当前仓库中：
+
+- PC0~PC3 被配置为推挽输出，不符合 AD9220 数据输入要求；
+- PC8、PC9、PC10、PC11、PC12 与核心板 TF 卡座及上拉电阻相连；
+- 当前映射跳过 PC9，数据整理需要额外位拼接；
+- 板载走线和上拉支路会增加高速并行采样风险。
+
+若硬件已经焊接到 GPIOC，最低限度需要：
+
+1. 把所有 12 根数据线改为输入、无上下拉；
+2. TF 卡槽中不得插卡；
+3. 对跳过 PC9 的位进行明确重排；
+4. 使用逻辑分析仪验证 2 MHz 下的数据稳定性。
+
+---
+
+## 5. CubeMX / SysConfig 详细配置
+
+## 5.1 RCC
+
+```text
+HSE: Crystal/Ceramic Resonator
+HSE_VALUE: 8 MHz
+PLL Source: HSE
+PLLM: 8
+PLLN: 336
+PLLP: /2
+PLLQ: /4（当前不用USB/SDIO时保留）
+SYSCLK: PLLCLK 168 MHz
+AHB: /1
+APB1: /4
+APB2: /2
+Flash Latency: 5 WS
+Voltage Scale: Scale 1
+```
+
+## 5.2 SYS
+
+```text
+Debug: Serial Wire
+Timebase Source: SysTick
+```
+
+## 5.3 TIM1：AD9220采样时钟与DMA触发
+
+TIM1 时钟为 168 MHz。
+
+### 基础参数
+
+```text
+Prescaler = 0
+Counter Mode = Up
+Auto Reload / Period = 84 - 1
+Repetition Counter = 0
+Clock Division = DIV1
+Auto Reload Preload = Disable
+```
+
+得到：
+
+```text
+Fs = 168 MHz / 84 = 2.000 MHz
+```
+
+### Channel 1：输出给 AD9220 CLK
+
+```text
+Mode = PWM Generation CH1
+Pin = PA8
+Pulse = 42
+Polarity = High
+Fast Mode = Disable
+GPIO Speed = Very High
+```
+
+得到 50% 占空比。
+
+### Channel 3：触发一次GPIO读取DMA
+
+当前仓库使用：
+
+```text
+TIM1_CH3
+Pulse = 63
+DMA Request = TIM1_CH3
+```
+
+CH3 比较事件发生在周期的 75% 位置，即采样时钟上升沿后约 375 ns，数据稳定裕量充足。
+
+电赛简化方案：
+
+- 保留 PE13 为 TIM1_CH3，但 PE13 不接外部模块；
+- CH3 的目的只是每周期产生一次 DMA 请求；
+- 不用 CH3 波形参与任何硬件功能。
+
+若 CubeMX 支持 `Output Compare No Output`，可使用无输出比较模式，释放 PE13；不是必须修改项。
+
+## 5.4 DMA2 Stream6 / Channel6
+
+请求源：`TIM1_CH3`
+
+```text
+Instance: DMA2_Stream6
+Channel: DMA_CHANNEL_6
+Direction: Peripheral to Memory
+Peripheral increment: Disable
+Memory increment: Enable
+Peripheral data width: Word
+Memory data width: Word
+Mode: Normal
+Priority: Very High
+FIFO: Disable
+Interrupt: Enable
+```
+
+DMA 的外设源地址必须手动指定为：
+
+```c
+(uint32_t)&GPIOE->IDR
+```
+
+内存目标：
+
+```c
+static uint32_t adc_raw[4096];
+```
+
+不要直接使用 `HAL_TIM_PWM_Start_DMA()` 作为GPIO采集接口，因为该HAL函数按“内存向CCR写数据”的PWM DMA用途设计。建议在 `bsp_ad9220.c` 中手动启动：
+
+```c
+HAL_DMA_Start_IT(&hdma_tim1_ch3,
+                 (uint32_t)&GPIOE->IDR,
+                 (uint32_t)adc_raw,
+                 ADC_SAMPLE_COUNT);
+
+__HAL_TIM_ENABLE_DMA(&htim1, TIM_DMA_CC3);
+HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_3);
+```
+
+完成后依次：
+
+```c
+HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_1);
+HAL_TIM_PWM_Stop(&htim1, TIM_CHANNEL_3);
+__HAL_TIM_DISABLE_DMA(&htim1, TIM_DMA_CC3);
+```
+
+DMA中断只设置：
+
+```c
+adc_capture_done = 1U;
+```
+
+不要在 DMA 回调中执行 FFT、串口发送或浮点计算。
+
+## 5.5 GPIO
+
+```text
+PE0~PE12: Input, No Pull
+PA8: Alternate Function TIM1_CH1, Very High Speed
+PE13: Alternate Function TIM1_CH3，可不外接
+PC13: Output Push Pull，默认高电平（LED灭）
+```
+
+## 5.6 DAC：AD603增益控制
+
+新增 DAC1 Channel 1：
+
+```text
+Pin: PA4 / DAC_OUT1
+Trigger: None
+Output Buffer: Enable
+```
+
+AD603 模块：
+
+1. 拔掉 P2 的 1-2 跳线帽；
+2. PA4 接 P2-2；
+3. STM32 GND 接 P2-3；
+4. DAC 输出范围仅使用约 0.4~1.446 V。
+
+初始换算：
+
+```c
+uint16_t dac_code = (uint16_t)(v_ctrl / 3.3f * 4095.0f + 0.5f);
+HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1,
+                 DAC_ALIGN_12B_R, dac_code);
+```
+
+手册标称关系：
+
+```text
+G_dB = 76.4812 * Vctrl - 50.592
+Vctrl = (G_dB + 50.592) / 76.4812
+```
+
+该公式只能用于初始设置。实际使用必须标定：
+
+```text
+Vctrl -> 整个链路实际增益
+```
+
+整个链路包括：8阶滤波、AD603、AD603 51Ω输出、AD9220 50Ω输入、AD9220默认5倍衰减。
+
+## 5.7 NVIC建议
+
+```text
+DMA2_Stream6_IRQn: Preemption Priority 1
+USART1_IRQn: Priority 5
+DMA2_Stream2_IRQn: Priority 5
+SysTick: Priority 15
+```
+
+项目不使用 RTOS，优先保证采集完成中断，不需要复杂中断优先级设计。
+
+---
+
+## 6. CMSIS-DSP 配置
+
+需要 DSP 库，推荐直接使用 CMSIS-DSP：
 
 ```c
 #include "arm_math.h"
-
-arm_rfft_fast_instance_f32 fft_inst;
-arm_rfft_fast_init_4096_f32(&fft_inst);
-arm_rfft_fast_f32(&fft_inst, fft_in, fft_out, 0);
 ```
 
-可选：
+核心函数：
 
 ```c
-arm_mean_f32();
-arm_rms_f32();
-arm_max_f32();
-arm_min_f32();
+arm_rfft_fast_init_f32(&rfft, 4096);
+arm_rfft_fast_f32(&rfft, fft_input, fft_output, 0);
+arm_cmplx_mag_f32(...);
 ```
 
-项目宏建议：
+编译设置：
 
 ```text
 ARM_MATH_CM4
-__FPU_PRESENT=1
+FPU = FPv4-SP-D16
+Float ABI = Hard
 ```
 
-编译器必须启用硬件浮点：
+Keil 可链接 Cortex-M4F 浮点版本 DSP 库；GCC/CMake 可加入 CMSIS-DSP 源码或对应预编译库。
 
-```text
-FPU: FPv4-SP-D16
-Float ABI: Hard
-```
+当前 `.ioc` 中启用了 X-CUBE-ALGOBUILD 的 DSP Library 选项，但本项目不需要使用 AlgoBuilder 生成算法。只要 CMSIS-DSP 头文件和库正确加入即可。
 
-## 6.2 FFT 缓冲建议
-
-```c
-#define FFT_SIZE 4096U
-
-static float32_t fft_in[FFT_SIZE];
-static float32_t fft_out[FFT_SIZE];
-static float32_t spectrum[FFT_SIZE / 2U];
-```
-
-不要运行时 `malloc`。可以复用数组减少 SRAM：完成峰值搜索后，`spectrum` 与波形显示缓存可复用。
+若编译出现 `__FPU_PRESENT` 重复定义警告，应删除工程中手工重复定义，保留 STM32F407 设备头文件中的定义。
 
 ---
 
-# 7. 推荐软件目录
+## 7. 软件目录与模块边界
 
 ```text
-Core/
-├─ Inc/
-│  ├─ bsp_ad9220.h
-│  ├─ alog_signal.h
-│  └─ app_process.h
-└─ Src/
-   ├─ bsp_ad9220.c
-   ├─ alog_signal.c
-   └─ app_process.c
+User/
+├─ bsp/
+│  ├─ bsp_ad9220.c/h       并行DMA采集、OTR检测
+│  └─ bsp_ad603.c/h        DAC控制、固定档位增益
+├─ alog/
+│  ├─ alog_signal.c/h      FFT、谱峰、拟合、RMS、Upp
+│  └─ alog_calib.c/h       频响、相位、增益标定表
+└─ app/
+   └─ app_process.c/h      保留现有UART/HMI，增加顺序调用
 ```
 
-已有 UART1、UART3 处理继续放在 `app_process.c`，不再新增 `bsp_hmi`，避免比赛中为了分层而重复改动已验证代码。
+不新增 manager/service/event-bus 等层。
 
-## 7.1 BSP 层
-
-`bsp_ad9220.c/h` 仅负责：
-
-- TIM1 采样时钟启动/停止；
-- DMA 一帧采集；
-- 读取 OTR；
-- 读取实际采样率配置；
-- 丢弃流水线前若干点或提供有效数据起始位置。
-
-推荐最少接口：
+### `bsp_ad9220` 推荐接口
 
 ```c
 void BSP_AD9220_Init(void);
@@ -330,293 +407,173 @@ bool BSP_AD9220_Capture(uint32_t *buffer,
                         uint32_t count,
                         uint32_t timeout_ms);
 bool BSP_AD9220_IsOverrange(void);
-uint32_t BSP_AD9220_GetRawSampleRate(void);
 ```
 
-## 7.2 ALOG 层
+### `bsp_ad603` 推荐接口
 
-`alog_signal.c/h` 只保留一个主入口：
+```c
+void BSP_AD603_Init(void);
+void BSP_AD603_SetVoltage(float voltage_v);
+void BSP_AD603_SetLevel(uint8_t level);
+uint8_t BSP_AD603_GetLevel(void);
+```
+
+先只做 5~6 个离散增益档，不做连续闭环 AGC。
+
+### `alog_signal` 推荐接口
 
 ```c
 bool ALOG_Signal_Analyze(const uint32_t *raw,
-                         uint32_t raw_count,
+                         uint32_t count,
+                         uint8_t gain_level,
                          SignalResult_t *result);
 ```
 
-内部按顺序执行：
+---
 
-1. 掩码、极性、零偏和电压标定；
-2. 需要时 FIR 二抽一；
-3. Hann 窗；
-4. 4096 点 RFFT；
-5. 谱峰、插值、基波/谐波关系；
-6. 正弦最小二乘拟合幅值和相位；
-7. 频响校正；
-8. 真有效值、峰峰值和显示波形重构。
+## 8. 保留现有 app_process 串口逻辑
 
-不要把每个数学步骤拆成独立文件。
+当前仓库的真实分配为：
 
-## 7.3 APP 层
+```text
+USART1：HMI 串口屏，PA9/PA10，9600 baud
+USART3：电脑调试，PB10/PB11，115200 baud
+```
 
-APP 只保留一个显示模式变量：
+`app_process.c` 中：
+
+- `huart1` 用于 HMI 指令发送和单字节按钮接收；
+- `huart3` 用于 `Debug_printf()`；
+- USART1 接收回调解析 `0xA1 / 0xA3 / 0xAF`。
+
+本次不修改 UART 驱动和按钮协议，只在 `App_Main_Process_Poll()` 中增加：
+
+```text
+按键处理
+-> 到达刷新周期
+-> 预采样/选择增益
+-> 正式采样
+-> ALOG分析
+-> 更新当前页面
+```
+
+由于 HMI 当前只有 9600 baud，波形刷新应控制：
+
+- 每次发送约 160~240 个显示点；
+- 刷新率 2~4 Hz；
+- 数值变化明显时再更新文本；
+- 不向屏幕发送 4096 个原始点。
+
+---
+
+## 9. AD603 离散增益与自动量程建议
+
+### 9.1 初始档位
+
+以下仅为启动值，必须实测修正：
+
+| 档位 | Vctrl 初值 | 手册标称增益 |
+| ---: | ---------: | -----------: |
+|    0 |     0.45 V |     -16.2 dB |
+|    1 |     0.65 V |      -0.9 dB |
+|    2 |     0.85 V |      14.4 dB |
+|    3 |     1.05 V |      29.7 dB |
+|    4 |     1.25 V |      45.0 dB |
+|    5 |     1.40 V |      56.5 dB |
+
+### 9.2 简洁自动量程
+
+1. 先用档位 1 或 2 预采样 1024 点；
+2. 计算去直流后的最大绝对码值；
+3. 选择使正式采样占 ADC 有效范围 40%~75% 的最高安全档；
+4. DAC切换后等待 2~5 ms；
+5. 正式采样 4096 点；
+6. 若 OTR 或峰值超过 90%，退一档并仅重采一次；
+7. 一帧计算期间冻结增益。
+
+最多允许一次重采，不写多层 AGC 状态机。
+
+---
+
+## 10. 8阶低通滤波器纳入软件标定
+
+根据当前 3 Vpp 实测：
+
+|    频率 |      输出 |    增益dB | 初始幅值修正倍数 |
+| ------: | --------: | --------: | ---------------: |
+|  10 kHz |  3.04 Vpp |  +0.12 dB |            0.987 |
+| 100 kHz |  2.83 Vpp |  -0.51 dB |            1.060 |
+| 200 kHz |  2.28 Vpp |  -2.38 dB |            1.316 |
+| 250 kHz |  1.94 Vpp |  -3.79 dB |            1.546 |
+| 300 kHz |  1.60 Vpp |  -5.46 dB |            1.875 |
+| 400 kHz | 0.957 Vpp |  -9.92 dB |            3.135 |
+| 450 kHz | 0.713 Vpp | -12.48 dB |            4.208 |
+| 500 kHz | 0.520 Vpp | -15.22 dB |            5.769 |
+|   1 MHz | 0.021 Vpp | -43.10 dB | 不作有效信号补偿 |
+
+判断：
+
+- 约 222 kHz 已达到 -3 dB；
+- 500 kHz 有效分量被明显削弱；
+- 1 MHz 干扰抑制较好；
+- 该表只能作为初始参考，最终必须在“滤波器 + AD603 + AD9220实际负载”条件下重测。
+
+标定表至少包含：
 
 ```c
-typedef enum {
-    VIEW_WAVE_1T = 0,
-    VIEW_WAVE_3T,
-    VIEW_SPECTRUM
-} AppView_t;
+frequency_hz
+magnitude_correction[gain_level]
+phase_correction_rad[gain_level]
 ```
 
-主循环：
-
-```c
-void APP_Process_Run(void)
-{
-    APP_ParseUartAndTjcButtons();  // 保留现有逻辑
-
-    if (!APP_TimeToRefresh()) {
-        return;
-    }
-
-    if (BSP_AD9220_Capture(g_adc_raw, ADC_RAW_COUNT, 20U)) {
-        ALOG_Signal_Analyze(g_adc_raw, ADC_RAW_COUNT, &g_result);
-        APP_HMI_Update(&g_result, g_view);
-    } else {
-        APP_HMI_ShowError("ADC TIMEOUT");
-    }
-}
-```
-
-不使用多级状态机；只有显示模式、一次采集完成标志和错误标志。
+只校正幅值不够。多谐波波形的峰峰值与各分量相位有关，必须测量滤波器/链路相移，才能重构输入端原始波形并准确计算 Upp。
 
 ---
 
-# 8. 两阶段采样方案
+## 11. TJC8048X270 页面建议
 
-## 8.1 第一阶段：必须先完成
-
-```text
-Fs = 2 MHz
-Raw count = 4096
-FFT count = 4096
-频率间隔 = 488.28125 Hz
-```
-
-优点：
-
-- 满足 500 Hz 频率分辨率；
-- 单帧仅 2.048 ms；
-- 4096 点 FFT 可直接使用 CMSIS-DSP；
-- 软件和内存最简单。
-
-## 8.2 第二阶段：用于抗干扰增强
+保持一个主页面，避免多页面状态同步：
 
 ```text
-Raw Fs = 4 MHz
-Raw count = 8192
-63 阶左右线性相位 FIR 低通
-二抽一
-Effective Fs = 2 MHz
-FFT count = 4096
+顶部：Upp、Urms、基频、当前增益档、采样状态
+中部：大曲线区域
+底部：1周期、3周期、频谱 三个按钮
+右侧：最多3组分量频率和幅值
+状态栏：OK / NO SIGNAL / OTR / ADC TIMEOUT / CALIBRATION
 ```
 
-目的：先在 4 MHz 原始数据中把 1 MHz 附近干扰表示出来，再在抽取前数字低通抑制，避免它在 2 MHz 直接采样时落在奈奎斯特边界附近。
+按钮命令继续使用：
 
-注意：数字滤波不能替代模拟抗混叠滤波器。高于 2 MHz 的输入分量仍可能在 4 MSPS 下混叠，因此硬件前端必须有低通。
-
-建议使用编译期开关，而不是运行中动态切换复杂状态：
-
-```c
-#define ADC_USE_4M_DECIMATE2  0
+```text
+0xA1：1周期
+0xA3：3周期
+0xAF：频谱
 ```
 
 ---
 
-# 9. AD9220 模块必须先做的硬件确认
+## 12. 推荐调试顺序
 
-上传模块默认参数为：
-
-- 5 V 供电；
-- 12 位并行输出、3.3 V 控制电平；
-- 50 Ω 输入；
-- 模块默认量程 10 Vpp；
-- 前端 π 型网络默认衰减 5 倍；
-- AD8132 完成单端转差分和共模偏置。
-
-本题只有 50~250 mVpp，直接使用 10 Vpp 量程会严重浪费 ADC 码数：
-
-```text
-50 mVpp 约占 20.5 codes
-250 mVpp 约占 102.4 codes
-```
-
-不建议直接使用默认量程。
-
-推荐最终硬件路线：
-
-1. 把模块 π 型衰减改为 1 倍参考值：`R6=R7≈151 Ω，R8+R9≈37 Ω`；
-2. 自制 BNC 前端完成 49.9 Ω 端接、保护、约 6 倍固定增益和 600~700 kHz 低通；
-3. 前端输出送入已修改的 AD9220 模块。
-
-这样输入端等效满量程约为：
-
-```text
-2 Vpp / 6 ≈ 333 mVpp
-```
-
-大致码数：
-
-```text
-50 mVpp  -> 约 614 codes
-250 mVpp -> 约 3072 codes
-```
-
-ADC 输入折算到被测端的理论量化步距约 0.081 mV，明显更有利于达到 5 mV 幅值误差指标。
-
-改阻值后先用 10 kHz 小信号验证：
-
-- 0 V 输入时中点稳定；
-- 正弦输入不触发 OTR；
-- 50 mVpp、250 mVpp 都能正常显示；
-- 输入频率升到 500 kHz 后幅值衰减可重复，后续用标定表补偿。
+1. 确认 HSE 与 168 MHz 系统时钟；测 PA8 为 2 MHz。
+2. 固定 AD603 手动增益，示波器确认不失真。
+3. DMA 采集 GPIOE 4096 点，串口输出前 32 个码。
+4. 固定单正弦完成 FFT 和频率测量。
+5. 在一个固定增益档完成幅值标定。
+6. 加入多个增益档和离散自动量程。
+7. 建立 10~500 kHz 全链路幅频表。
+8. 建立相频表，完成波形重构和 Upp。
+9. 加入 1 MHz 以上干扰，验证第三问。
+10. 最后接入 HMI 波形和频谱刷新。
 
 ---
 
-# 10. TJC8048X270 UI 设计
+## 13. 当前必须避免的做法
 
-## 10.1 页面原则
-
-使用一个主页面，不要为了 1 周期、3 周期和频谱创建三个完全独立页面。
-
-推荐 800×480 横屏布局：
-
-```text
-┌──────────────────────────────────────────────────────────────┐
-│ G题 周期信号分析     RUN     Fs:2.000M     OTR:OK            │
-├──────────────────────────────────────┬───────────────────────┤
-│                                      │ Upp      182.6 mV      │
-│                                      │ Urms      66.2 mV      │
-│       波形 / 正频率轴频谱图区         │ f0       50.01 kHz      │
-│            约 560×300                │                       │
-│                                      │ 1: 50.01k  72.0mV     │
-│                                      │ 3:150.02k  18.1mV     │
-│                                      │ 4:200.03k   9.0mV     │
-├──────────────────────────────────────┴───────────────────────┤
-│ [1周期]      [3周期]      [频谱]       状态: MEASURE OK      │
-└──────────────────────────────────────────────────────────────┘
-```
-
-## 10.2 推荐控件
-
-| 类型        | 建议名称    | 用途                                |
-| ----------- | ----------- | ----------------------------------- |
-| Text        | `t_title`   | 标题                                |
-| Text        | `t_status`  | OK、OTR、TIMEOUT、NO SIGNAL         |
-| Text/Number | `n_upp`     | 峰峰值，建议 MCU 先转成 0.1 mV 整数 |
-| Text/Number | `n_urms`    | 真有效值                            |
-| Text/Number | `n_f0`      | 基频                                |
-| Text        | `t_comp1~3` | 三个频率分量的阶次、频率、幅值      |
-| Waveform    | `s_wave`    | 波形或频谱显示                      |
-| Button      | `b_wave1`   | 发送 1 周期事件                     |
-| Button      | `b_wave3`   | 发送 3 周期事件                     |
-| Button      | `b_spec`    | 发送频谱事件                        |
-
-屏幕按钮事件使用固定单字节或短帧，例如：
-
-```text
-0xA1 = 1 周期
-0xA3 = 3 周期
-0xAF = 频谱
-```
-
-继续由现有 `app_process` 的 USART3 接收逻辑解析，不再新建按键驱动层。
-
-## 10.3 刷新频率
-
-- 数值：5~10 Hz；
-- 曲线：4~5 Hz；
-- 每帧只发送 400~600 个显示点；
-- 不向屏幕发送全部 4096 个采样点；
-- 只有结果或模式改变时更新对应控件。
-
-建议先保持 USART3 115200 波特率。若 600 点曲线刷新不足，再在屏幕与 MCU 同时改为 230400；不要在算法未通前先改串口链路。
-
-## 10.4 显示数据生成
-
-波形不要直接抽取原始 ADC 点。应由 ALOG 根据检测到的幅值、频率和相位重构：
-
-```text
-1 周期：横轴覆盖 T0
-3 周期：横轴覆盖 3T0
-```
-
-这样在 500 kHz、2 MSPS 仅有 4 点/周期时，屏幕仍可得到平滑且相位正确的波形。
-
-频谱图只需要正频率轴上的离散谱线。题目最多 3 个有效分量，因此可以：
-
-- 用波形控件画 0~500 kHz 的简化谱线；或
-- 直接画 3 根竖线并在右侧列表显示精确值。
-
-第二种更容易控制视觉效果，且符合“定性显示频谱”的评分目标。
-
----
-
-# 11. 建议的调试日志
-
-USART1 日志保持简短：
-
-```text
-[ADC] fs=2000000 n=4096 min=1812 max=2276 otr=0
-[FFT] f0=50012.3Hz comp=3 time=7.4ms
-[RES] upp=182.6mV rms=66.2mV
-[HMI] view=SPEC tx=486B
-```
-
-禁止每帧打印 4096 个 ADC 码。需要看原始数据时，只在调试命令触发后输出前 32 或 128 点。
-
----
-
-# 12. 最短验证顺序
-
-1. PA8 输出 2 MHz 方波，用示波器确认频率和占空比；
-2. 关闭 DMA，只手动读取 GPIOC，确认 D0~D11 接线；
-3. DMA 采集 4096 点，USART1 输出 min/max/mean 和前 32 点；
-4. 输入 10 kHz 单正弦，确认码值极性和波形；
-5. 输入 100 kHz，完成 4096 点 FFT 和频率显示；
-6. 输入 500 kHz，验证频率和最小信号幅值；
-7. 加入 Hann 窗、插值和幅值拟合；
-8. 完成 TJC 三个按钮及单页 UI；
-9. 最后加入模拟低通、4 MSPS + 二抽一和抗 1 MHz 干扰。
-
-不要并行开发复杂 UI、FFT、滤波和 DMA。每完成一段链路，先留下可重复的串口验证日志。
-
----
-
-# 13. 配置检查表
-
-- [ ] HSE + PLL，SYSCLK 168 MHz；
-- [ ] PC0~PC11 连续接 D0~D11；
-- [ ] PC12 读取 OTR；
-- [ ] PA8 TIM1_CH1 输出 ADC CLK；
-- [ ] TIM1_CH3 产生 DMA 请求；
-- [ ] DMA2 Stream6 Channel6，源地址 GPIOC->IDR；
-- [ ] DMA 缓冲不放 CCM；
-- [ ] USART1/3 和 app_process 保持原样；
-- [ ] CMSIS-DSP 4096 点 RFFT 可链接；
-- [ ] 编译器启用 Cortex-M4F 硬件浮点；
-- [ ] 基础模式 2 MSPS + 4096 点先通过；
-- [ ] TJC 单页、三个按钮、每帧 400~600 显示点；
-- [ ] AD9220 模块默认 5 倍衰减已处理，不能直接按 10 Vpp 量程测 50 mVpp；
-- [ ] 5 V 电源分屏幕、数字、模拟三支路并共地；
-- [ ] 完成 10~500 kHz 多频点幅值校准。
-
-## 参考资料
-
-- 2026 电赛 G 题《周期信号测量分析装置》；
-- 凌智电子《AD9220 模数转换器模块用户手册 V1.1》；
-- 凌智电子《AD9220 原理图 V1.1》；
-- 上传的 STM32F103/H750 标准库测试程序，仅用于接口、极性和时序参考；
-- STM32F407 参考手册 RM0090；
-- CMSIS-DSP Real FFT 文档；
-- 仓库：`Jacky-zhengH/TI_2026_G_Signal`。
+- 不直接把手册 AD603 增益公式当作最终测量增益；
+- 不直接对含 `uJ` 的原始样本求 RMS；
+- 不使用原始样本最大值减最小值作为 500 kHz 多谐波信号 Upp；
+- 不在每个采样点进入中断；
+- 不在 DMA 回调中运行 FFT；
+- 不在一个采样帧中连续改变 AD603 增益；
+- 不继续把 PC8~PC12 当作理想无负载数据总线；
+- 不只做幅值补偿而忽略滤波器相位补偿。
