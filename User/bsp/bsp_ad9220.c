@@ -2,7 +2,7 @@
 
 #include "tim.h"
 
-#define AD9220_DMA_MAX_COUNT  0xFFFFU
+#define AD9220_DMA_MAX_COUNT 0xFFFFU
 
 extern TIM_HandleTypeDef htim1;
 extern DMA_HandleTypeDef hdma_tim1_ch3;
@@ -74,10 +74,10 @@ bool bsp_ad9220_capture(uint32_t *buffer, uint32_t count, uint32_t timeout_ms)
 
     __HAL_DMA_CLEAR_FLAG(&hdma_tim1_ch3,
                          __HAL_DMA_GET_TC_FLAG_INDEX(&hdma_tim1_ch3) |
-                         __HAL_DMA_GET_HT_FLAG_INDEX(&hdma_tim1_ch3) |
-                         __HAL_DMA_GET_TE_FLAG_INDEX(&hdma_tim1_ch3) |
-                         __HAL_DMA_GET_DME_FLAG_INDEX(&hdma_tim1_ch3) |
-                         __HAL_DMA_GET_FE_FLAG_INDEX(&hdma_tim1_ch3));
+                             __HAL_DMA_GET_HT_FLAG_INDEX(&hdma_tim1_ch3) |
+                             __HAL_DMA_GET_TE_FLAG_INDEX(&hdma_tim1_ch3) |
+                             __HAL_DMA_GET_DME_FLAG_INDEX(&hdma_tim1_ch3) |
+                             __HAL_DMA_GET_FE_FLAG_INDEX(&hdma_tim1_ch3));
 
     status = HAL_DMA_Start(&hdma_tim1_ch3,
                            (uint32_t)&GPIOE->IDR,
@@ -90,8 +90,8 @@ bool bsp_ad9220_capture(uint32_t *buffer, uint32_t count, uint32_t timeout_ms)
 
     __HAL_TIM_ENABLE_DMA(&htim1, TIM_DMA_CC3);
     status = HAL_DMA_PollForTransfer(&hdma_tim1_ch3,
-                                    HAL_DMA_FULL_TRANSFER,
-                                    timeout_ms);
+                                     HAL_DMA_FULL_TRANSFER,
+                                     timeout_ms);
     __HAL_TIM_DISABLE_DMA(&htim1, TIM_DMA_CC3);
 
     if (status != HAL_OK)
@@ -113,6 +113,7 @@ uint32_t bsp_ad9220_get_sample_rate(void)
     return AD9220_SAMPLE_RATE_HZ;
 }
 
+/*掩码*/
 uint16_t bsp_ad9220_get_code(uint32_t raw)
 {
     return (uint16_t)(raw & AD9220_DATA_MASK);
