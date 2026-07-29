@@ -27,6 +27,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "app_process.h"
+#include "bsp_ad603.h"
+#include "bsp_ad9220.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -96,6 +98,16 @@ int main(void)
   MX_TIM1_Init();
   MX_DAC_Init();
   /* USER CODE BEGIN 2 */
+  if (!bsp_ad603_init())
+  {
+    Error_Handler();
+  }
+
+  if (!bsp_ad9220_init())
+  {
+    Error_Handler();
+  }
+
   HMI_Process_Init();
   /* USER CODE END 2 */
 

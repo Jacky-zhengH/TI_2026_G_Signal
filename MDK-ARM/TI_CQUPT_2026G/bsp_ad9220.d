@@ -2,6 +2,8 @@ ti_cqupt_2026g\bsp_ad9220.o: ..\User\bsp\bsp_ad9220.c
 ti_cqupt_2026g\bsp_ad9220.o: ..\User\bsp\bsp_ad9220.h
 ti_cqupt_2026g\bsp_ad9220.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdbool.h
 ti_cqupt_2026g\bsp_ad9220.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+ti_cqupt_2026g\bsp_ad9220.o: ../Core/Inc/tim.h
+ti_cqupt_2026g\bsp_ad9220.o: ../Core/Inc/main.h
 ti_cqupt_2026g\bsp_ad9220.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h
 ti_cqupt_2026g\bsp_ad9220.o: ../Core/Inc/stm32f4xx_hal_conf.h
 ti_cqupt_2026g\bsp_ad9220.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_rcc.h

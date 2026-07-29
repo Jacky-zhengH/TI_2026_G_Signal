@@ -43,3 +43,6 @@ ti_cqupt_2026g\main.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
 ti_cqupt_2026g\main.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdlib.h
 ti_cqupt_2026g\main.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
 ti_cqupt_2026g\main.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdarg.h
+ti_cqupt_2026g\main.o: ../User/bsp/bsp_ad603.h
+ti_cqupt_2026g\main.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdbool.h
+ti_cqupt_2026g\main.o: ../User/bsp/bsp_ad9220.h

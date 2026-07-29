@@ -1,5 +1,9 @@
 ti_cqupt_2026g\bsp_ad603.o: ..\User\bsp\bsp_ad603.c
 ti_cqupt_2026g\bsp_ad603.o: ..\User\bsp\bsp_ad603.h
+ti_cqupt_2026g\bsp_ad603.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdbool.h
+ti_cqupt_2026g\bsp_ad603.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+ti_cqupt_2026g\bsp_ad603.o: ../Core/Inc/dac.h
+ti_cqupt_2026g\bsp_ad603.o: ../Core/Inc/main.h
 ti_cqupt_2026g\bsp_ad603.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h
 ti_cqupt_2026g\bsp_ad603.o: ../Core/Inc/stm32f4xx_hal_conf.h
 ti_cqupt_2026g\bsp_ad603.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_rcc.h
@@ -7,7 +11,6 @@ ti_cqupt_2026g\bsp_ad603.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_de
 ti_cqupt_2026g\bsp_ad603.o: ../Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f4xx.h
 ti_cqupt_2026g\bsp_ad603.o: ../Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f407xx.h
 ti_cqupt_2026g\bsp_ad603.o: ../Drivers/CMSIS/Include/core_cm4.h
-ti_cqupt_2026g\bsp_ad603.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
 ti_cqupt_2026g\bsp_ad603.o: ../Drivers/CMSIS/Include/cmsis_version.h
 ti_cqupt_2026g\bsp_ad603.o: ../Drivers/CMSIS/Include/cmsis_compiler.h
 ti_cqupt_2026g\bsp_ad603.o: ../Drivers/CMSIS/Include/cmsis_armcc.h
