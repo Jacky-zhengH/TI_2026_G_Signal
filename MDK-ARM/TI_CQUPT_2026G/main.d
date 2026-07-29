@@ -28,8 +28,11 @@ ti_cqupt_2026g\main.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_flash_e
 ti_cqupt_2026g\main.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_flash_ramfunc.h
 ti_cqupt_2026g\main.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr.h
 ti_cqupt_2026g\main.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr_ex.h
+ti_cqupt_2026g\main.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h
+ti_cqupt_2026g\main.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h
 ti_cqupt_2026g\main.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h
 ti_cqupt_2026g\main.o: ../Core/Inc/dma.h
+ti_cqupt_2026g\main.o: ../Core/Inc/tim.h
 ti_cqupt_2026g\main.o: ../Core/Inc/usart.h
 ti_cqupt_2026g\main.o: ../Core/Inc/gpio.h
 ti_cqupt_2026g\main.o: ../User/app/app_process.h
