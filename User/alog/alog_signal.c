@@ -2,37 +2,36 @@
 
 #include "arm_math.h"
 
-#include <float.h>
 #include <math.h>
 #include <string.h>
 
-#define ALOG_TWO_PI             6.28318530717958647692f
-#define ALOG_PEAK_RELATIVE_MIN  0.01f
-#define ALOG_NOISE_MULTIPLE     6.0f
-#define ALOG_PEAK_GUARD_BINS    3U
-#define ALOG_INTERP_DEN_MIN     1.0e-12f
+#define ALOG_TWO_PI          6.28318530717958647692f
+#define ALOG_PEAK_REL_MIN     0.02f
+#define ALOG_PEAK_GUARD_BINS  3U
+#define ALOG_INTERP_EPSILON   1.0e-12f
+#define ALOG_INV_SQRT_TWO     0.70710678f
+
+static float hann_window[ALOG_FFT_SIZE];
+static float fft_input[ALOG_FFT_SIZE];
+static float fft_output[ALOG_FFT_SIZE];
+static float spectrum[ALOG_SPECTRUM_SIZE];
 
 static arm_rfft_fast_instance_f32 fft_instance;
+static float window_sum;
+static bool alog_ready;
 
-static float sample_buf[ALOG_FFT_SIZE];
-static float fft_buf[ALOG_FFT_SIZE];
-static float mag_buf[ALOG_SPECTRUM_SIZE];
-static float hann_window[ALOG_FFT_SIZE];
-
-static float hann_gain;
-static bool alog_initialized;
-
-static void alog_clear_result(alog_result_t *result)
+static void clear_result(signal_result_t *result)
 {
     memset(result, 0, sizeof(*result));
 }
 
-static void alog_prepare_raw(const uint32_t *raw, alog_result_t *result)
+static void calc_time(const uint32_t *raw, signal_result_t *result)
 {
     uint32_t i;
     float code;
+    float diff;
     float sum = 0.0f;
-    float square_sum = 0.0f;
+    float sum_sq = 0.0f;
     float min_code = (float)(raw[0] & ALOG_ADC_MASK);
     float max_code = min_code;
 
@@ -54,173 +53,180 @@ static void alog_prepare_raw(const uint32_t *raw, alog_result_t *result)
     result->dc_code = sum / (float)ALOG_FFT_SIZE;
     result->min_code = min_code;
     result->max_code = max_code;
-    result->p2p_code = max_code - min_code;
+    result->raw_pp_code = max_code - min_code;
 
     for (i = 0U; i < ALOG_FFT_SIZE; i++)
     {
-        code = (float)(raw[i] & ALOG_ADC_MASK) - result->dc_code;
-        sample_buf[i] = code;
-        square_sum += code * code;
+        code = (float)(raw[i] & ALOG_ADC_MASK);
+        diff = code - result->dc_code;
+        sum_sq += diff * diff;
     }
 
-    (void)arm_sqrt_f32(square_sum / (float)ALOG_FFT_SIZE,
-                       &result->rms_code);
+    result->time_rms_code =
+        sqrtf(sum_sq / (float)ALOG_FFT_SIZE);
 }
 
-static void alog_prepare_f32(const float *samples, alog_result_t *result)
+static void make_fft_input(const uint32_t *raw, float dc_code)
 {
     uint32_t i;
-    float value;
-    float sum = 0.0f;
-    float square_sum = 0.0f;
-    float min_code = samples[0];
-    float max_code = samples[0];
+    float code;
 
     for (i = 0U; i < ALOG_FFT_SIZE; i++)
     {
-        value = samples[i];
-        sum += value;
-
-        if (value < min_code)
-        {
-            min_code = value;
-        }
-        if (value > max_code)
-        {
-            max_code = value;
-        }
+        code = (float)(raw[i] & ALOG_ADC_MASK);
+        fft_input[i] = (code - dc_code) * hann_window[i];
     }
-
-    result->dc_code = sum / (float)ALOG_FFT_SIZE;
-    result->min_code = min_code;
-    result->max_code = max_code;
-    result->p2p_code = max_code - min_code;
-
-    for (i = 0U; i < ALOG_FFT_SIZE; i++)
-    {
-        value = samples[i] - result->dc_code;
-        sample_buf[i] = value;
-        square_sum += value * value;
-    }
-
-    (void)arm_sqrt_f32(square_sum / (float)ALOG_FFT_SIZE,
-                       &result->rms_code);
 }
 
-static void alog_make_spectrum(void)
+static void calc_spectrum(void)
 {
-    uint32_t i;
+    uint32_t k;
     float real;
     float imag;
-    float magnitude;
-    float scale;
 
-    for (i = 0U; i < ALOG_FFT_SIZE; i++)
+    arm_rfft_fast_f32(&fft_instance,
+                      fft_input,
+                      fft_output,
+                      0U);
+
+    /*
+     * 快速RFFT打包格式：
+     * output[0]为DC，output[1]为Nyquist；
+     * k=1..N/2-1的实部和虚部分别位于2k和2k+1。
+     */
+    spectrum[0] = fabsf(fft_output[0]);
+    for (k = 1U; k < ALOG_SPECTRUM_SIZE; k++)
     {
-        sample_buf[i] *= hann_window[i];
-    }
-
-    arm_rfft_fast_f32(&fft_instance, sample_buf, fft_buf, 0U);
-
-    scale = 1.0f / ((float)ALOG_FFT_SIZE * hann_gain);
-    /* 快速RFFT中fft_buf[0]为DC，fft_buf[1]为Nyquist。 */
-    mag_buf[0] = fabsf(fft_buf[0]) * scale;
-    mag_buf[ALOG_HALF_SIZE] = fabsf(fft_buf[1]) * scale;
-
-    for (i = 1U; i < ALOG_HALF_SIZE; i++)
-    {
-        real = fft_buf[2U * i];
-        imag = fft_buf[2U * i + 1U];
-        (void)arm_sqrt_f32(real * real + imag * imag, &magnitude);
-        mag_buf[i] = 2.0f * magnitude * scale;
+        real = fft_output[2U * k];
+        imag = fft_output[2U * k + 1U];
+        spectrum[k] = sqrtf(real * real + imag * imag);
     }
 }
 
-static uint8_t alog_find_peaks(alog_result_t *result)
+static float interp_peak(uint16_t bin, float *peak_mag)
 {
-    uint16_t selected_bin[ALOG_MAX_COMPONENTS];
+    float left = spectrum[bin - 1U];
+    float center = spectrum[bin];
+    float right = spectrum[bin + 1U];
+    float denom = left - 2.0f * center + right;
+    float delta = 0.0f;
+    float interp_mag;
+
+    if (fabsf(denom) > ALOG_INTERP_EPSILON)
+    {
+        delta = 0.5f * (left - right) / denom;
+        if (delta > 0.5f)
+        {
+            delta = 0.5f;
+        }
+        else if (delta < -0.5f)
+        {
+            delta = -0.5f;
+        }
+    }
+
+    interp_mag = center - 0.25f * (left - right) * delta;
+    if (interp_mag < 0.0f)
+    {
+        interp_mag = center;
+    }
+
+    *peak_mag = interp_mag;
+    return ((float)bin + delta) * ALOG_BIN_HZ;
+}
+
+static uint8_t find_peaks(signal_comp_t *comp)
+{
+    uint16_t selected_bin[ALOG_MAX_COMP];
     uint32_t start_bin;
     uint32_t end_bin;
-    uint32_t search_count;
     uint32_t i;
     uint32_t j;
     uint32_t best_bin;
-    uint8_t selected_count = 0U;
+    uint32_t distance;
+    uint8_t count = 0U;
     bool guarded;
-    float bin_hz = alog_signal_get_bin_hz();
-    float strongest_peak = 0.0f;
-    float mean_mag = 0.0f;
+    float strongest = 0.0f;
     float threshold;
-    float best_amp;
-    float left;
     float center;
-    float right;
-    float den;
-    float delta;
-    float amp_interp;
+    float best_mag;
+    float peak_mag;
 
-    start_bin = (uint32_t)ceilf(ALOG_FREQ_MIN_HZ / bin_hz);
-    end_bin = (uint32_t)floorf(ALOG_FREQ_MAX_HZ / bin_hz);
+    start_bin = (uint32_t)ceilf(ALOG_FREQ_MIN_HZ / ALOG_BIN_HZ);
+    end_bin = (uint32_t)floorf(ALOG_FREQ_MAX_HZ / ALOG_BIN_HZ);
 
     if (start_bin < 1U)
     {
         start_bin = 1U;
     }
-    if (end_bin >= ALOG_HALF_SIZE)
+    if (end_bin >= (ALOG_SPECTRUM_SIZE - 1U))
     {
-        end_bin = ALOG_HALF_SIZE - 1U;
+        end_bin = ALOG_SPECTRUM_SIZE - 2U;
     }
     if (start_bin > end_bin)
     {
         return 0U;
     }
 
-    search_count = end_bin - start_bin + 1U;
     for (i = start_bin; i <= end_bin; i++)
     {
-        mean_mag += mag_buf[i];
-        if (mag_buf[i] > strongest_peak)
+        center = spectrum[i];
+        if ((center > spectrum[i - 1U]) &&
+            (center >= spectrum[i + 1U]) &&
+            (center > strongest))
         {
-            strongest_peak = mag_buf[i];
+            strongest = center;
         }
     }
-    mean_mag /= (float)search_count;
 
-    threshold = strongest_peak * ALOG_PEAK_RELATIVE_MIN;
-    if (threshold < mean_mag * ALOG_NOISE_MULTIPLE)
+    if (strongest <= 0.0f)
     {
-        threshold = mean_mag * ALOG_NOISE_MULTIPLE;
+        return 0U;
     }
 
-    while (selected_count < ALOG_MAX_COMPONENTS)
+    /*
+     * 当前2%阈值用于无硬件模拟测试，
+     * AD9220到货后需根据实际底噪调整。
+     */
+    threshold = strongest * ALOG_PEAK_REL_MIN;
+
+    while (count < ALOG_MAX_COMP)
     {
         best_bin = 0U;
-        best_amp = 0.0f;
+        best_mag = 0.0f;
 
         for (i = start_bin; i <= end_bin; i++)
         {
-            center = mag_buf[i];
+            center = spectrum[i];
             if ((center < threshold) ||
-                (center <= mag_buf[i - 1U]) ||
-                (center < mag_buf[i + 1U]))
+                (center <= spectrum[i - 1U]) ||
+                (center < spectrum[i + 1U]))
             {
                 continue;
             }
 
             guarded = false;
-            for (j = 0U; j < selected_count; j++)
+            for (j = 0U; j < count; j++)
             {
-                if ((i > selected_bin[j] ?
-                     i - selected_bin[j] : selected_bin[j] - i) <
-                    ALOG_PEAK_GUARD_BINS)
+                if (i > selected_bin[j])
+                {
+                    distance = i - selected_bin[j];
+                }
+                else
+                {
+                    distance = selected_bin[j] - i;
+                }
+
+                if (distance <= ALOG_PEAK_GUARD_BINS)
                 {
                     guarded = true;
                     break;
                 }
             }
-            if (!guarded && (center > best_amp))
+
+            if ((!guarded) && (center > best_mag))
             {
-                best_amp = center;
+                best_mag = center;
                 best_bin = i;
             }
         }
@@ -230,196 +236,155 @@ static uint8_t alog_find_peaks(alog_result_t *result)
             break;
         }
 
-        selected_bin[selected_count] = (uint16_t)best_bin;
-        left = mag_buf[best_bin - 1U];
-        center = mag_buf[best_bin];
-        right = mag_buf[best_bin + 1U];
-        den = left - 2.0f * center + right;
-        delta = 0.0f;
-
-        if (fabsf(den) > ALOG_INTERP_DEN_MIN)
-        {
-            delta = 0.5f * (left - right) / den;
-            if (delta > 0.5f)
-            {
-                delta = 0.5f;
-            }
-            else if (delta < -0.5f)
-            {
-                delta = -0.5f;
-            }
-        }
-
-        amp_interp = center - 0.25f * (left - right) * delta;
-        if ((amp_interp < 0.0f) ||
-            (amp_interp != amp_interp) ||
-            (amp_interp > FLT_MAX))
-        {
-            amp_interp = center;
-        }
-
-        result->component[selected_count].bin_index =
-            (float)best_bin + delta;
-        result->component[selected_count].freq_hz =
-            result->component[selected_count].bin_index * bin_hz;
-        result->component[selected_count].amp_code = amp_interp;
-        result->component[selected_count].harmonic = 0U;
-        selected_count++;
+        selected_bin[count] = (uint16_t)best_bin;
+        comp[count].freq_hz =
+            interp_peak((uint16_t)best_bin, &peak_mag);
+        comp[count].amp_code = 2.0f * peak_mag / window_sum;
+        comp[count].rms_code =
+            comp[count].amp_code * ALOG_INV_SQRT_TWO;
+        comp[count].bin = (uint16_t)best_bin;
+        comp[count].harmonic = 0U;
+        count++;
     }
 
-    return selected_count;
+    return count;
 }
 
-static void alog_sort_components(alog_result_t *result)
+static void sort_comp(signal_comp_t *comp, uint8_t count)
 {
     uint32_t i;
     uint32_t j;
-    alog_component_t temp;
+    signal_comp_t temp;
 
-    for (i = 0U; i < result->component_count; i++)
+    for (i = 0U; i < count; i++)
     {
-        for (j = i + 1U; j < result->component_count; j++)
+        for (j = i + 1U; j < count; j++)
         {
-            if (result->component[j].freq_hz <
-                result->component[i].freq_hz)
+            if (comp[j].freq_hz < comp[i].freq_hz)
             {
-                temp = result->component[i];
-                result->component[i] = result->component[j];
-                result->component[j] = temp;
+                temp = comp[i];
+                comp[i] = comp[j];
+                comp[j] = temp;
             }
         }
     }
 }
 
-static void alog_mark_harmonics(alog_result_t *result)
+static void find_harmonics(signal_result_t *result)
 {
     uint32_t i;
     uint32_t order;
-    float f0;
     float ratio;
     float error_hz;
-    float tolerance_hz = 2.0f * alog_signal_get_bin_hz();
+    float sum_rms_sq = 0.0f;
 
-    if (result->component_count == 0U)
+    if (result->comp_count == 0U)
     {
         return;
     }
 
-    f0 = result->component[0].freq_hz;
-    result->fundamental_hz = f0;
-    result->component[0].harmonic = 1U;
+    result->fundamental_hz = result->comp[0].freq_hz;
+    result->comp[0].harmonic = 1U;
 
-    for (i = 1U; i < result->component_count; i++)
+    for (i = 0U; i < result->comp_count; i++)
     {
-        ratio = result->component[i].freq_hz / f0;
-        order = (uint32_t)(ratio + 0.5f);
-        error_hz = fabsf(result->component[i].freq_hz -
-                         (float)order * f0);
+        sum_rms_sq +=
+            result->comp[i].rms_code * result->comp[i].rms_code;
+
+        if (i == 0U)
+        {
+            continue;
+        }
+
+        ratio = result->comp[i].freq_hz / result->fundamental_hz;
+        order = (uint32_t)roundf(ratio);
+        error_hz = fabsf(result->comp[i].freq_hz -
+                         (float)order * result->fundamental_hz);
 
         if ((order >= 2U) &&
             (order <= UINT8_MAX) &&
-            (error_hz <= tolerance_hz))
+            (error_hz <= 2.0f * ALOG_BIN_HZ))
         {
-            result->component[i].harmonic = (uint8_t)order;
+            result->comp[i].harmonic = (uint8_t)order;
         }
     }
-}
 
-static bool alog_finish_analysis(alog_result_t *result)
-{
-    alog_make_spectrum();
-    result->component_count = alog_find_peaks(result);
-
-    if (result->component_count == 0U)
-    {
-        return true;
-    }
-
-    alog_sort_components(result);
-    alog_mark_harmonics(result);
+    result->spec_rms_code = sqrtf(sum_rms_sq);
     result->valid = true;
-    return true;
 }
 
-bool alog_signal_init(void)
+bool alog_init(void)
 {
     uint32_t i;
     float phase;
-    float window_sum = 0.0f;
 
-    if (alog_initialized)
+    if (alog_ready)
     {
         return true;
     }
 
     if (arm_rfft_fast_init_f32(&fft_instance,
-                               (uint16_t)ALOG_FFT_SIZE) != ARM_MATH_SUCCESS)
+                               (uint16_t)ALOG_FFT_SIZE) !=
+        ARM_MATH_SUCCESS)
     {
         return false;
     }
 
+    window_sum = 0.0f;
     for (i = 0U; i < ALOG_FFT_SIZE; i++)
     {
-        phase = ALOG_TWO_PI * (float)i / (float)(ALOG_FFT_SIZE - 1U);
+        phase = ALOG_TWO_PI * (float)i /
+                (float)(ALOG_FFT_SIZE - 1U);
         hann_window[i] = 0.5f - 0.5f * arm_cos_f32(phase);
         window_sum += hann_window[i];
     }
 
-    hann_gain = window_sum / (float)ALOG_FFT_SIZE;
-    memset(sample_buf, 0, sizeof(sample_buf));
-    memset(fft_buf, 0, sizeof(fft_buf));
-    memset(mag_buf, 0, sizeof(mag_buf));
+    memset(fft_input, 0, sizeof(fft_input));
+    memset(fft_output, 0, sizeof(fft_output));
+    memset(spectrum, 0, sizeof(spectrum));
 
-    alog_initialized = true;
+    alog_ready = true;
     return true;
 }
 
-bool alog_signal_analyze(const uint32_t *raw,
-                         uint32_t count,
-                         alog_result_t *result)
+bool alog_analyze(const uint32_t *raw,
+                  uint32_t count,
+                  signal_result_t *result)
 {
     if (result == NULL)
     {
         return false;
     }
 
-    alog_clear_result(result);
-    if ((!alog_initialized) || (raw == NULL) ||
+    clear_result(result);
+    if ((!alog_ready) ||
+        (raw == NULL) ||
         (count != ALOG_FFT_SIZE))
     {
         return false;
     }
 
-    alog_prepare_raw(raw, result);
-    return alog_finish_analysis(result);
-}
+    calc_time(raw, result);
+    make_fft_input(raw, result->dc_code);
+    calc_spectrum();
 
-bool alog_signal_analyze_f32(const float *samples,
-                             uint32_t count,
-                             alog_result_t *result)
-{
-    if (result == NULL)
+    result->comp_count = find_peaks(result->comp);
+    if (result->comp_count == 0U)
     {
-        return false;
+        return true;
     }
 
-    alog_clear_result(result);
-    if ((!alog_initialized) || (samples == NULL) ||
-        (count != ALOG_FFT_SIZE))
+    sort_comp(result->comp, result->comp_count);
+    find_harmonics(result);
+    return true;
+}
+
+const float *alog_get_spectrum(uint32_t *count)
+{
+    if (count != NULL)
     {
-        return false;
+        *count = ALOG_SPECTRUM_SIZE;
     }
 
-    alog_prepare_f32(samples, result);
-    return alog_finish_analysis(result);
-}
-
-uint32_t alog_signal_get_sample_rate(void)
-{
-    return ALOG_SAMPLE_RATE_HZ;
-}
-
-float alog_signal_get_bin_hz(void)
-{
-    return (float)ALOG_SAMPLE_RATE_HZ / (float)ALOG_FFT_SIZE;
+    return spectrum;
 }
