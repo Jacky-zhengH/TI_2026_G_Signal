@@ -27,7 +27,19 @@ Project File Date:  07/29/2026
 <h2>Output:</h2>
 *** Using Compiler 'V5.06 update 7 (build 960)', folder: 'D:\Program Files\Keil_v5\ARM\ARMCC\Bin'
 Build target 'TI_CQUPT_2026G'
-"TI_CQUPT_2026G\TI_CQUPT_2026G.axf" - 0 Error(s), 0 Warning(s).
+compiling alog_signal.c...
+compiling main.c...
+../Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f407xx.h(51): warning:  #47-D: incompatible redefinition of macro "__FPU_PRESENT" 
+  #define __FPU_PRESENT             1U       /*!< FPU present                                   */
+../Core/Src/main.c: 1 warning, 0 errors
+compiling bsp_ad9220.c...
+../Drivers/CMSIS/Device/ST/STM32F4xx/Include/stm32f407xx.h(51): warning:  #47-D: incompatible redefinition of macro "__FPU_PRESENT" 
+  #define __FPU_PRESENT             1U       /*!< FPU present                                   */
+..\User\bsp\bsp_ad9220.c: 1 warning, 0 errors
+linking...
+Program Size: Code=16322 RO-data=1010 RW-data=24 ZI-data=2224  
+FromELF: creating hex file...
+"TI_CQUPT_2026G\TI_CQUPT_2026G.axf" - 0 Error(s), 2 Warning(s).
 
 <h2>Software Packages used:</h2>
 
@@ -50,7 +62,7 @@ Package Vendor: Keil
 
    * Component: ARM::CMSIS:CORE:5.5.0
       Include file:  CMSIS\Core\Include\tz_context.h
-Build Time Elapsed:  00:00:01
+Build Time Elapsed:  00:00:04
 </pre>
 </body>
 </html>
