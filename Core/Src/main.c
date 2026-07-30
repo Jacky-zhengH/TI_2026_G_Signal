@@ -26,6 +26,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "alog_signal.h"
 #include "app_process.h"
 #include "bsp_ad603.h"
 #include "bsp_ad9220.h"
@@ -98,7 +99,16 @@ int main(void)
   MX_TIM1_Init();
   MX_DAC_Init();
   /* USER CODE BEGIN 2 */
-  bsp_ad9220_init();
+  if (!bsp_ad9220_init())
+  {
+    Error_Handler();
+  }
+
+  if (!alog_init())
+  {
+    Error_Handler();
+  }
+
   HMI_Process_Init();
   Debug_printf("[BOOT]System: boot over\r\n");
   /* USER CODE END 2 */
