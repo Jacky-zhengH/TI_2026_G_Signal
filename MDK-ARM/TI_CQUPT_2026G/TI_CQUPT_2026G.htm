@@ -3,7 +3,7 @@
 <title>Static Call Graph - [TI_CQUPT_2026G\TI_CQUPT_2026G.axf]</title></head>
 <body><HR>
 <H1>Static Call Graph for image TI_CQUPT_2026G\TI_CQUPT_2026G.axf</H1><HR>
-<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060960: Last Updated: Thu Jul 30 11:00:36 2026
+<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060960: Last Updated: Thu Jul 30 11:30:15 2026
 <BR><P>
 <H3>Maximum Stack Usage =        324 bytes + Unknown(Functions without stacksize, Cycles, Untraceable Function Pointers)</H3><H3>
 Call chain for Maximum Stack Depth:</H3>
@@ -411,7 +411,7 @@ Global Symbols
 <P><STRONG><a name="[13f]"></a>__rt_entry_postsh_1</STRONG> (Thumb, 0 bytes, Stack size unknown bytes, __rtentry2.o(.ARM.Collect$$rtentry$$00000009))
 
 <P><STRONG><a name="[97]"></a>__rt_entry_main</STRONG> (Thumb, 0 bytes, Stack size unknown bytes, __rtentry2.o(.ARM.Collect$$rtentry$$0000000D))
-<BR><BR>[Stack]<UL><LI>Max Depth = 184 + Unknown Stack Size
+<BR><BR>[Stack]<UL><LI>Max Depth = 200 + Unknown Stack Size
 <LI>Call Chain = __rt_entry_main &rArr; main &rArr; App_Main_Process_Poll &rArr; Task_Button_Response &rArr; Task_AD9220_Test &rArr; Debug_printf &rArr; vsnprintf &rArr; _printf_char_common &rArr; __printf
 </UL>
 <BR>[Calls]<UL><LI><a href="#[98]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;main
@@ -1120,7 +1120,7 @@ Global Symbols
 </UL>
 
 <P><STRONG><a name="[c3]"></a>App_Main_Process_Poll</STRONG> (Thumb, 4 bytes, Stack size 0 bytes, app_process.o(i.App_Main_Process_Poll))
-<BR><BR>[Stack]<UL><LI>Max Depth = 184 + Unknown Stack Size
+<BR><BR>[Stack]<UL><LI>Max Depth = 200 + Unknown Stack Size
 <LI>Call Chain = App_Main_Process_Poll &rArr; Task_Button_Response &rArr; Task_AD9220_Test &rArr; Debug_printf &rArr; vsnprintf &rArr; _printf_char_common &rArr; __printf
 </UL>
 <BR>[Calls]<UL><LI><a href="#[c4]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Task_Button_Response
@@ -1745,7 +1745,7 @@ Global Symbols
 </UL>
 
 <P><STRONG><a name="[98]"></a>main</STRONG> (Thumb, 54 bytes, Stack size 0 bytes, main.o(i.main))
-<BR><BR>[Stack]<UL><LI>Max Depth = 184 + Unknown Stack Size
+<BR><BR>[Stack]<UL><LI>Max Depth = 200 + Unknown Stack Size
 <LI>Call Chain = main &rArr; App_Main_Process_Poll &rArr; Task_Button_Response &rArr; Task_AD9220_Test &rArr; Debug_printf &rArr; vsnprintf &rArr; _printf_char_common &rArr; __printf
 </UL>
 <BR>[Calls]<UL><LI><a href="#[119]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;bsp_ad9220_init
@@ -1908,8 +1908,8 @@ Local Symbols
 <BR>[Called By]<UL><LI><a href="#[c7]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;HAL_UART_Transmit
 </UL>
 
-<P><STRONG><a name="[110]"></a>Task_AD9220_Test</STRONG> (Thumb, 106 bytes, Stack size 24 bytes, app_process.o(i.Task_AD9220_Test))
-<BR><BR>[Stack]<UL><LI>Max Depth = 176 + Unknown Stack Size
+<P><STRONG><a name="[110]"></a>Task_AD9220_Test</STRONG> (Thumb, 184 bytes, Stack size 40 bytes, app_process.o(i.Task_AD9220_Test))
+<BR><BR>[Stack]<UL><LI>Max Depth = 192 + Unknown Stack Size
 <LI>Call Chain = Task_AD9220_Test &rArr; Debug_printf &rArr; vsnprintf &rArr; _printf_char_common &rArr; __printf
 </UL>
 <BR>[Calls]<UL><LI><a href="#[c6]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Debug_printf
@@ -1921,7 +1921,7 @@ Local Symbols
 </UL>
 
 <P><STRONG><a name="[c4]"></a>Task_Button_Response</STRONG> (Thumb, 78 bytes, Stack size 8 bytes, app_process.o(i.Task_Button_Response))
-<BR><BR>[Stack]<UL><LI>Max Depth = 184 + Unknown Stack Size
+<BR><BR>[Stack]<UL><LI>Max Depth = 200 + Unknown Stack Size
 <LI>Call Chain = Task_Button_Response &rArr; Task_AD9220_Test &rArr; Debug_printf &rArr; vsnprintf &rArr; _printf_char_common &rArr; __printf
 </UL>
 <BR>[Calls]<UL><LI><a href="#[c6]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;Debug_printf

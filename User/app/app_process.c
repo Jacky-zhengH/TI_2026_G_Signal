@@ -82,6 +82,13 @@ static void Task_AD9220_Test(uint8_t cmd)
     uint16_t code; // 12位ADC值
     uint32_t i;
 
+    uint16_t min_code;
+    uint16_t max_code;
+    uint16_t sample_code;
+
+    uint32_t sum;
+    uint32_t avg_int;
+    uint32_t avg_frac;
     // now = HAL_GetTick();
 
     // /* 使用无符号减法，兼容HAL_GetTick回绕 */
@@ -122,6 +129,40 @@ static void Task_AD9220_Test(uint8_t cmd)
         "[Task] AD9220 capture success, count = %u, otr = %u\r\n",
         (unsigned int)AD9220_SAMPLE_COUNT,
         bsp_ad9220_is_overrange() ? 1U : 0U);
+
+    min_code = AD9220_DATA_MASK;
+    max_code = 0U;
+    sum = 0U;
+
+    for (i = 0U; i < AD9220_SAMPLE_COUNT; i++)
+    {
+        sample_code = bsp_ad9220_get_code(ad9220_samples[i]);
+
+        if (sample_code < min_code)
+        {
+            min_code = sample_code;
+        }
+
+        if (sample_code > max_code)
+        {
+            max_code = sample_code;
+        }
+
+        sum += sample_code;
+    }
+    avg_int = sum / AD9220_SAMPLE_COUNT;
+
+    avg_frac =
+        ((sum % AD9220_SAMPLE_COUNT) * 100U) /
+        AD9220_SAMPLE_COUNT;
+
+    Debug_printf(
+        "[Task] Stats: min = %u, max = %u, avg = %lu.%02lu\r\n",
+        (unsigned int)min_code,
+        (unsigned int)max_code,
+        (unsigned long)avg_int,
+        (unsigned long)avg_frac);
+
     for (i = 0U; i < AD9220_TEST_PRINT_COUNT; i++)
     {
         index = i * step; // 根据步长设置
