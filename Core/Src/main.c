@@ -98,10 +98,9 @@ int main(void)
   MX_TIM1_Init();
   MX_DAC_Init();
   /* USER CODE BEGIN 2 */
-  bsp_ad603_init();
   bsp_ad9220_init();
   HMI_Process_Init();
-  Debug_printf("[BOOT]System boot over\r\n");
+  Debug_printf("[BOOT]System: boot over\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
