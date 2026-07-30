@@ -16,6 +16,7 @@
 #define ALOG_LOG_EPSILON        1.0e-12f
 #define ALOG_OSC_RENORM_MASK    255U
 #define ALOG_UPP_POINTS         512U
+#define ALOG_CAL_COUNT          13U
 
 typedef struct
 {
@@ -23,6 +24,46 @@ typedef struct
     float mag_code;
     uint16_t bin;
 } peak_t;
+
+/*
+ * TEMP_CAL:
+ * 当前系数来自100mVpp单正弦初步实测。
+ * 已包含完整模拟链和AD9220的幅频影响。
+ * 后续将使用多次平均和示波器实测输入更新。
+ */
+static const float cal_freq_hz[ALOG_CAL_COUNT] =
+{
+    10000.0f,
+    25000.0f,
+    50000.0f,
+    100000.0f,
+    200000.0f,
+    250000.0f,
+    300000.0f,
+    350000.0f,
+    400000.0f,
+    425000.0f,
+    450000.0f,
+    475000.0f,
+    500000.0f
+};
+
+static const float cal_mv_per_code[ALOG_CAL_COUNT] =
+{
+    0.136287f,
+    0.136584f,
+    0.136742f,
+    0.137792f,
+    0.139736f,
+    0.139539f,
+    0.138205f,
+    0.134540f,
+    0.128183f,
+    0.125340f,
+    0.123693f,
+    0.125813f,
+    0.135255f
+};
 
 static float hann_window[ALOG_FFT_SIZE];
 static float fft_input[ALOG_FFT_SIZE];
@@ -41,6 +82,35 @@ static bool valid_float(float value)
 static void clear_result(signal_result_t *result)
 {
     memset(result, 0, sizeof(*result));
+}
+
+static float cal_gain(float freq_hz)
+{
+    uint32_t i;
+
+    if (freq_hz <= cal_freq_hz[0])
+    {
+        return cal_mv_per_code[0];
+    }
+    if (freq_hz >= cal_freq_hz[ALOG_CAL_COUNT - 1U])
+    {
+        return cal_mv_per_code[ALOG_CAL_COUNT - 1U];
+    }
+
+    for (i = 0U; i < (ALOG_CAL_COUNT - 1U); i++)
+    {
+        if (freq_hz <= cal_freq_hz[i + 1U])
+        {
+            return cal_mv_per_code[i] +
+                   (freq_hz - cal_freq_hz[i]) *
+                   (cal_mv_per_code[i + 1U] -
+                    cal_mv_per_code[i]) /
+                   (cal_freq_hz[i + 1U] -
+                    cal_freq_hz[i]);
+        }
+    }
+
+    return cal_mv_per_code[ALOG_CAL_COUNT - 1U];
 }
 
 static void calc_time(const uint32_t *raw, signal_result_t *result)
@@ -482,6 +552,12 @@ static bool fit_components(const uint32_t *raw,
         result->comp[i].phase_rad = atan2f(-imag, real);
         result->comp[i].bin = selected[i].bin;
         result->comp[i].harmonic = harmonic[i];
+        result->comp[i].amp_mv =
+            result->comp[i].amp_code *
+            cal_gain(result->comp[i].freq_hz);
+        result->comp[i].rms_mv =
+            result->comp[i].rms_code *
+            cal_gain(result->comp[i].freq_hz);
     }
 
     return true;
@@ -492,27 +568,37 @@ static bool calc_result(signal_result_t *result)
     uint32_t i;
     uint32_t point;
     float rms_sum = 0.0f;
+    float rms_mv_sum = 0.0f;
     float base_phase;
     float wave;
+    float wave_mv;
     float min_wave = FLT_MAX;
     float max_wave = -FLT_MAX;
+    float min_wave_mv = FLT_MAX;
+    float max_wave_mv = -FLT_MAX;
 
     for (i = 0U; i < result->comp_count; i++)
     {
         rms_sum += result->comp[i].rms_code *
                    result->comp[i].rms_code;
+        rms_mv_sum += result->comp[i].rms_mv *
+                      result->comp[i].rms_mv;
     }
     result->urms_code = sqrtf(rms_sum);
+    result->urms_mv = sqrtf(rms_mv_sum);
 
     /*
-     * TODO_CAL: 这里仅重构ADC侧code波形。
-     * 输入端Upp和mV需要整条模拟链幅相实测，当前补偿不参加计算。
+     * TODO_PHASE:
+     * 当前只完成幅频补偿。
+     * 多谐波输入端Upp仍受模拟链相位响应影响。
+     * 单正弦Upp应接近2*amp_mv。
      */
     for (point = 0U; point < ALOG_UPP_POINTS; point++)
     {
         base_phase = ALOG_TWO_PI * (float)point /
                      (float)ALOG_UPP_POINTS;
         wave = 0.0f;
+        wave_mv = 0.0f;
         for (i = 0U; i < result->comp_count; i++)
         {
             wave += result->comp[i].amp_code *
@@ -520,6 +606,11 @@ static bool calc_result(signal_result_t *result)
                         (float)result->comp[i].harmonic *
                         base_phase +
                         result->comp[i].phase_rad);
+            wave_mv += result->comp[i].amp_mv *
+                       arm_cos_f32(
+                           (float)result->comp[i].harmonic *
+                           base_phase +
+                           result->comp[i].phase_rad);
         }
 
         if (wave < min_wave)
@@ -530,11 +621,22 @@ static bool calc_result(signal_result_t *result)
         {
             max_wave = wave;
         }
+        if (wave_mv < min_wave_mv)
+        {
+            min_wave_mv = wave_mv;
+        }
+        if (wave_mv > max_wave_mv)
+        {
+            max_wave_mv = wave_mv;
+        }
     }
 
     result->upp_code = max_wave - min_wave;
+    result->upp_mv = max_wave_mv - min_wave_mv;
     return valid_float(result->urms_code) &&
-           valid_float(result->upp_code);
+           valid_float(result->upp_code) &&
+           valid_float(result->urms_mv) &&
+           valid_float(result->upp_mv);
 }
 
 bool alog_init(void)

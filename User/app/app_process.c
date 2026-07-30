@@ -274,8 +274,23 @@ static void hmi_show_result(void)
     uint32_t used;
     int len;
 
-    HMI_Send_Cmd("n_upp.txt=\"Upp: --- mV\"");
-    HMI_Send_Cmd("n_urms.txt=\"Urms: --- mV\"");
+    len = snprintf(cmd,
+                   sizeof(cmd),
+                   "n_upp.txt=\"Upp: %.1f mV\"",
+                   signal_result.upp_mv);
+    if ((len > 0) && (len < (int)sizeof(cmd)))
+    {
+        HMI_Send_Cmd(cmd);
+    }
+
+    len = snprintf(cmd,
+                   sizeof(cmd),
+                   "n_urms.txt=\"Urms: %.1f mV\"",
+                   signal_result.urms_mv);
+    if ((len > 0) && (len < (int)sizeof(cmd)))
+    {
+        HMI_Send_Cmd(cmd);
+    }
 
     len = snprintf(cmd,
                    sizeof(cmd),
@@ -293,11 +308,12 @@ static void hmi_show_result(void)
     {
         len = snprintf(&cmd[used],
                        sizeof(cmd) - used,
-                       "%s%u: %.3f kHz --- mV",
+                       "%s%u: %.3f kHz %.1f mV",
                        (i == 0U) ? "" : "\\r",
                        (unsigned int)(i + 1U),
                        signal_result.comp[i].freq_hz /
-                       1000.0f);
+                       1000.0f,
+                       signal_result.comp[i].amp_mv);
         if ((len <= 0) ||
             (len >= (int)(sizeof(cmd) - used)))
         {
@@ -342,6 +358,10 @@ static void debug_measure(uint32_t time_ms)
                  signal_result.upp_code);
     Debug_printf("urms_code: %.3f\r\n",
                  signal_result.urms_code);
+    Debug_printf("upp_mv: %.3f mV\r\n",
+                 signal_result.upp_mv);
+    Debug_printf("urms_mv: %.3f mV\r\n",
+                 signal_result.urms_mv);
 
     for (i = 0U; i < ALOG_MAX_COMP; i++)
     {
@@ -356,6 +376,10 @@ static void debug_measure(uint32_t time_ms)
                      signal_result.comp[i].amp_code);
         Debug_printf("rms_code: %.3f\r\n",
                      signal_result.comp[i].rms_code);
+        Debug_printf("amp_mv: %.3f mV\r\n",
+                     signal_result.comp[i].amp_mv);
+        Debug_printf("rms_mv: %.3f mV\r\n",
+                     signal_result.comp[i].rms_mv);
         Debug_printf("phase: %.6f rad\r\n",
                      signal_result.comp[i].phase_rad);
     }
@@ -376,13 +400,15 @@ static void task_measure(app_view_t view)
     uint32_t start_tick;
     uint32_t measure_ms;
     bool plot_ok;
+    bool print_result = false;
+    const char *error_text = NULL;
 
     start_tick = HAL_GetTick();
     if (!bsp_ad9220_capture(adc_raw,
                             AD9220_SAMPLE_COUNT,
                             APP_CAPTURE_TIMEOUT_MS))
     {
-        Debug_printf("[MEAS] capture failed\r\n");
+        error_text = "[MEAS] capture failed\r\n";
         goto measure_end;
     }
 
@@ -390,14 +416,13 @@ static void task_measure(app_view_t view)
                       AD9220_SAMPLE_COUNT,
                       &signal_result))
     {
-        Debug_printf("[MEAS] analyze failed\r\n");
+        error_text = "[MEAS] analyze failed\r\n";
         goto measure_end;
     }
 
     if (!signal_result.valid)
     {
-        measure_ms = HAL_GetTick() - start_tick;
-        debug_measure(measure_ms);
+        print_result = true;
         goto measure_end;
     }
 
@@ -414,20 +439,12 @@ static void task_measure(app_view_t view)
         plot_ok = make_spec();
     }
 
-    measure_ms = HAL_GetTick() - start_tick;
-    debug_measure(measure_ms);
     hmi_show_result();
-    (void)snprintf(cmd,
-                   sizeof(cmd),
-                   "t_tim.txt=\"%lu ms\"",
-                   (unsigned long)measure_ms);
-    HMI_Send_Cmd(cmd);
-
     if (plot_ok && (!hmi_wave_send()))
     {
-        Debug_printf("[HMI] addt failed\r\n");
+        error_text = "[HMI] addt failed\r\n";
     }
-    return;
+    print_result = true;
 
 measure_end:
     measure_ms = HAL_GetTick() - start_tick;
@@ -436,6 +453,14 @@ measure_end:
                    "t_tim.txt=\"%lu ms\"",
                    (unsigned long)measure_ms);
     HMI_Send_Cmd(cmd);
+    if (error_text != NULL)
+    {
+        Debug_printf("%s", error_text);
+    }
+    if (print_result)
+    {
+        debug_measure(measure_ms);
+    }
 }
 
 /**

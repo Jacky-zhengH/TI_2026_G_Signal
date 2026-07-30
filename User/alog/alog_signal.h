@@ -35,6 +35,14 @@ typedef struct
 
     uint16_t bin;
     uint8_t harmonic;
+
+    /*
+     * TEMP_CAL:
+     * amp_mv和rms_mv使用当前频率查表换算。
+     * 当前系数是第一版临时实测值。
+     */
+    float amp_mv;
+    float rms_mv;
 } signal_comp_t;
 
 typedef struct
@@ -60,6 +68,14 @@ typedef struct
 
     uint8_t comp_count;
     signal_comp_t comp[ALOG_MAX_COMP];
+
+    /*
+     * TEMP_CAL:
+     * urms_mv为各分量补偿后真有效值。
+     * upp_mv为补偿幅值和当前相位重构的峰峰值。
+     */
+    float urms_mv;
+    float upp_mv;
 } signal_result_t;
 
 bool alog_init(void);
