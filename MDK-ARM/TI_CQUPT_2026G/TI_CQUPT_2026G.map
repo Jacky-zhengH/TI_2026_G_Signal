@@ -564,7 +564,6 @@ Section Cross References
     alog_signal.o(i.calc_spectrum) refers to alog_signal.o(.data) for .data
     alog_signal.o(i.calc_time) refers to sqrtf.o(i.__hardfp_sqrtf) for __hardfp_sqrtf
     alog_signal.o(i.clear_result) refers to rt_memclr_w.o(.text) for __aeabi_memclr4
-    alog_signal.o(i.find_peaks) refers to ceilf.o(i.__hardfp_ceilf) for __hardfp_ceilf
     alog_signal.o(i.find_peaks) refers to floorf.o(i.__hardfp_floorf) for __hardfp_floorf
     alog_signal.o(i.find_peaks) refers to alog_signal.o(i.interp_freq) for interp_freq
     alog_signal.o(i.find_peaks) refers to alog_signal.o(.bss) for .bss

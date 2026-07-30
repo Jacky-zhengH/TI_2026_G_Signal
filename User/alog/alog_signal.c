@@ -159,8 +159,8 @@ static uint8_t find_peaks(peak_t *peak, float *noise_code)
     float threshold;
     float best_mag;
 
-    start_bin = (uint32_t)ceilf(ALOG_FREQ_MIN_HZ /
-                                ALOG_BIN_HZ);
+    start_bin = (uint32_t)floorf(ALOG_FREQ_MIN_HZ /
+                                 ALOG_BIN_HZ);
     end_bin = (uint32_t)floorf(ALOG_FREQ_MAX_HZ /
                                ALOG_BIN_HZ);
     if (end_bin >= (ALOG_SPECTRUM_SIZE - 1U))
