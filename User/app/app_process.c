@@ -311,6 +311,58 @@ static void hmi_show_result(void)
     HMI_Send_Cmd(cmd);
 }
 
+static void debug_measure(uint32_t time_ms)
+{
+    uint32_t i;
+
+    Debug_printf("\r\n========== MEASURE ==========\r\n");
+    Debug_printf("TIME: %lu ms\r\n",
+                 (unsigned long)time_ms);
+    Debug_printf("dc_code: %.3f\r\n",
+                 signal_result.dc_code);
+    Debug_printf("min_code: %.3f\r\n",
+                 signal_result.min_code);
+    Debug_printf("max_code: %.3f\r\n",
+                 signal_result.max_code);
+    Debug_printf("raw_pp_code: %.3f\r\n",
+                 signal_result.raw_pp_code);
+    Debug_printf("time_rms_code: %.3f\r\n",
+                 signal_result.time_rms_code);
+    Debug_printf("noise_code: %.3f\r\n",
+                 signal_result.noise_code);
+
+    Debug_printf("\r\nRESULT:\r\n");
+    Debug_printf("valid: %u\r\n",
+                 signal_result.valid ? 1U : 0U);
+    Debug_printf("fundamental: %.3f Hz\r\n",
+                 signal_result.fundamental_hz);
+    Debug_printf("comp_count: %u\r\n",
+                 (unsigned int)signal_result.comp_count);
+    Debug_printf("upp_code: %.3f\r\n",
+                 signal_result.upp_code);
+    Debug_printf("urms_code: %.3f\r\n",
+                 signal_result.urms_code);
+
+    for (i = 0U; i < ALOG_MAX_COMP; i++)
+    {
+        Debug_printf("\r\nCOMP%u:\r\n",
+                     (unsigned int)(i + 1U));
+        Debug_printf("harmonic: %u\r\n",
+                     (unsigned int)
+                     signal_result.comp[i].harmonic);
+        Debug_printf("freq: %.3f Hz\r\n",
+                     signal_result.comp[i].freq_hz);
+        Debug_printf("amp_code: %.3f\r\n",
+                     signal_result.comp[i].amp_code);
+        Debug_printf("rms_code: %.3f\r\n",
+                     signal_result.comp[i].rms_code);
+        Debug_printf("phase: %.6f rad\r\n",
+                     signal_result.comp[i].phase_rad);
+    }
+
+    Debug_printf("\r\n=============================\r\n");
+}
+
 //=========================================================================================================
 // 3. 应用任务函数
 //=========================================================================================================
@@ -323,7 +375,6 @@ static void task_measure(app_view_t view)
     char cmd[40];
     uint32_t start_tick;
     uint32_t measure_ms;
-    uint32_t i;
     bool plot_ok;
 
     start_tick = HAL_GetTick();
@@ -345,24 +396,9 @@ static void task_measure(app_view_t view)
 
     if (!signal_result.valid)
     {
-        Debug_printf("[MEAS] no signal\r\n");
+        measure_ms = HAL_GetTick() - start_tick;
+        debug_measure(measure_ms);
         goto measure_end;
-    }
-
-    Debug_printf(
-        "[MEAS] otr=%u f0=%.3fkHz comp=%u pp=%.1f rms=%.1f\r\n",
-        bsp_ad9220_is_overrange() ? 1U : 0U,
-        signal_result.fundamental_hz / 1000.0f,
-        (unsigned int)signal_result.comp_count,
-        signal_result.upp_code,
-        signal_result.urms_code);
-    for (i = 0U; i < signal_result.comp_count; i++)
-    {
-        Debug_printf(
-            "[COMP] h=%u f=%.3fkHz amp=%.1fcode\r\n",
-            (unsigned int)signal_result.comp[i].harmonic,
-            signal_result.comp[i].freq_hz / 1000.0f,
-            signal_result.comp[i].amp_code);
     }
 
     if (view == app_view_wave1)
@@ -379,6 +415,7 @@ static void task_measure(app_view_t view)
     }
 
     measure_ms = HAL_GetTick() - start_tick;
+    debug_measure(measure_ms);
     hmi_show_result();
     (void)snprintf(cmd,
                    sizeof(cmd),
