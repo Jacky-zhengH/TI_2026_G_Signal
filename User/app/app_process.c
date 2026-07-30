@@ -2,10 +2,13 @@
 #include "alog_signal.h"
 #include "bsp_ad9220.h"
 #include "main.h"
+#include "arm_math.h"
 
+#include <float.h>
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 
 //*********************************************************************************************************
 extern UART_HandleTypeDef huart1; // HMI 控制串口
@@ -22,6 +25,12 @@ static volatile uint8_t hmi_reply_code = 0;
 // #define AD9220_TEST_INTERVAL_MS 1000U   //1000ms --> 1s采集
 #define APP_CAPTURE_TIMEOUT_MS 10U
 #define APP_PLOT_COUNT 538U
+#define APP_CAL_COUNT 13U
+#define APP_REBUILD_POINTS 512U
+
+#ifndef ARM_MATH_PI
+#define ARM_MATH_PI 3.14159265358979323846f
+#endif
 
 typedef enum
 {
@@ -30,8 +39,57 @@ typedef enum
     app_view_spec
 } app_view_t;
 
+typedef struct
+{
+    float amp_mv[ALOG_MAX_COMP];
+    float rms_mv[ALOG_MAX_COMP];
+    float urms_mv;
+    float upp_mv;
+} app_mv_result_t;
+
+/*
+ * TEMP_CAL:
+ * 当前系数来自100mVpp单正弦初步实测。
+ * 系数单位为mV/code，对应正弦峰值。
+ * 后续使用示波器实测输入和多次平均数据替换。
+ */
+static const float cal_freq_hz[APP_CAL_COUNT] =
+{
+    10000.0f,
+    25000.0f,
+    50000.0f,
+    100000.0f,
+    200000.0f,
+    250000.0f,
+    300000.0f,
+    350000.0f,
+    400000.0f,
+    425000.0f,
+    450000.0f,
+    475000.0f,
+    500000.0f
+};
+
+static const float cal_mv_per_code[APP_CAL_COUNT] =
+{
+    0.136287f,
+    0.136584f,
+    0.136742f,
+    0.137792f,
+    0.139736f,
+    0.139539f,
+    0.138205f,
+    0.134540f,
+    0.128183f,
+    0.125340f,
+    0.123693f,
+    0.125813f,
+    0.135255f
+};
+
 static uint32_t adc_raw[AD9220_SAMPLE_COUNT];
 static signal_result_t signal_result;
+static app_mv_result_t mv_result;
 static float plot_float[APP_PLOT_COUNT];
 static uint8_t plot_byte[APP_PLOT_COUNT];
 
@@ -123,6 +181,102 @@ void Debug_printf(const char *text, ...)
 //=========================================================================================================
 // 2. 任务辅助函数 static
 //=========================================================================================================
+
+static float cal_gain(float freq_hz)
+{
+    uint32_t i;
+
+    if (freq_hz <= cal_freq_hz[0])
+    {
+        return cal_mv_per_code[0];
+    }
+    if (freq_hz >= cal_freq_hz[APP_CAL_COUNT - 1U])
+    {
+        return cal_mv_per_code[APP_CAL_COUNT - 1U];
+    }
+
+    for (i = 0U; i < (APP_CAL_COUNT - 1U); i++)
+    {
+        if (freq_hz <= cal_freq_hz[i + 1U])
+        {
+            return cal_mv_per_code[i] +
+                   (freq_hz - cal_freq_hz[i]) *
+                   (cal_mv_per_code[i + 1U] -
+                    cal_mv_per_code[i]) /
+                   (cal_freq_hz[i + 1U] -
+                    cal_freq_hz[i]);
+        }
+    }
+
+    return cal_mv_per_code[APP_CAL_COUNT - 1U];
+}
+
+static bool calc_mv(const signal_result_t *result,
+                    app_mv_result_t *mv)
+{
+    uint32_t i;
+    uint32_t point;
+    float gain;
+    float sum_sq = 0.0f;
+    float base_phase;
+    float wave;
+    float min_wave = FLT_MAX;
+    float max_wave = -FLT_MAX;
+
+    if ((result == NULL) ||
+        (mv == NULL) ||
+        (!result->valid) ||
+        (result->comp_count == 0U) ||
+        (result->comp_count > ALOG_MAX_COMP))
+    {
+        return false;
+    }
+
+    memset(mv, 0, sizeof(*mv));
+    for (i = 0U; i < result->comp_count; i++)
+    {
+        gain = cal_gain(result->comp[i].freq_hz);
+        mv->amp_mv[i] =
+            result->comp[i].amp_code * gain;
+        mv->rms_mv[i] =
+            result->comp[i].rms_code * gain;
+        sum_sq += mv->rms_mv[i] * mv->rms_mv[i];
+    }
+    mv->urms_mv = sqrtf(sum_sq);
+
+    /*
+     * TODO_PHASE:
+     * 当前只做幅频补偿。
+     * 多谐波Upp仍会受到模拟前端相位响应影响。
+     */
+    for (point = 0U; point < APP_REBUILD_POINTS; point++)
+    {
+        base_phase =
+            2.0f * ARM_MATH_PI * (float)point /
+            (float)APP_REBUILD_POINTS;
+        wave = 0.0f;
+        for (i = 0U; i < result->comp_count; i++)
+        {
+            wave += mv->amp_mv[i] *
+                    arm_cos_f32(
+                        (float)result->comp[i].harmonic *
+                        base_phase +
+                        result->comp[i].phase_rad);
+        }
+
+        if (wave < min_wave)
+        {
+            min_wave = wave;
+        }
+        if (wave > max_wave)
+        {
+            max_wave = wave;
+        }
+    }
+
+    mv->upp_mv = max_wave - min_wave;
+    return true;
+}
 
 static bool hmi_wait(uint8_t code, uint32_t timeout_ms)
 {
@@ -277,7 +431,7 @@ static void hmi_show_result(void)
     len = snprintf(cmd,
                    sizeof(cmd),
                    "n_upp.txt=\"Upp: %.1f mV\"",
-                   signal_result.upp_mv);
+                   mv_result.upp_mv);
     if ((len > 0) && (len < (int)sizeof(cmd)))
     {
         HMI_Send_Cmd(cmd);
@@ -286,7 +440,7 @@ static void hmi_show_result(void)
     len = snprintf(cmd,
                    sizeof(cmd),
                    "n_urms.txt=\"Urms: %.1f mV\"",
-                   signal_result.urms_mv);
+                   mv_result.urms_mv);
     if ((len > 0) && (len < (int)sizeof(cmd)))
     {
         HMI_Send_Cmd(cmd);
@@ -313,7 +467,7 @@ static void hmi_show_result(void)
                        (unsigned int)(i + 1U),
                        signal_result.comp[i].freq_hz /
                        1000.0f,
-                       signal_result.comp[i].amp_mv);
+                       mv_result.amp_mv[i]);
         if ((len <= 0) ||
             (len >= (int)(sizeof(cmd) - used)))
         {
@@ -359,11 +513,11 @@ static void debug_measure(uint32_t time_ms)
     Debug_printf("urms_code: %.3f\r\n",
                  signal_result.urms_code);
     Debug_printf("upp_mv: %.3f mV\r\n",
-                 signal_result.upp_mv);
+                 mv_result.upp_mv);
     Debug_printf("urms_mv: %.3f mV\r\n",
-                 signal_result.urms_mv);
+                 mv_result.urms_mv);
 
-    for (i = 0U; i < ALOG_MAX_COMP; i++)
+    for (i = 0U; i < signal_result.comp_count; i++)
     {
         Debug_printf("\r\nCOMP%u:\r\n",
                      (unsigned int)(i + 1U));
@@ -377,9 +531,9 @@ static void debug_measure(uint32_t time_ms)
         Debug_printf("rms_code: %.3f\r\n",
                      signal_result.comp[i].rms_code);
         Debug_printf("amp_mv: %.3f mV\r\n",
-                     signal_result.comp[i].amp_mv);
+                     mv_result.amp_mv[i]);
         Debug_printf("rms_mv: %.3f mV\r\n",
-                     signal_result.comp[i].rms_mv);
+                     mv_result.rms_mv[i]);
         Debug_printf("phase: %.6f rad\r\n",
                      signal_result.comp[i].phase_rad);
     }
@@ -401,6 +555,7 @@ static void task_measure(app_view_t view)
     uint32_t measure_ms;
     bool plot_ok;
     bool print_result = false;
+    bool show_time = false;
     const char *error_text = NULL;
 
     start_tick = HAL_GetTick();
@@ -422,7 +577,14 @@ static void task_measure(app_view_t view)
 
     if (!signal_result.valid)
     {
+        memset(&mv_result, 0, sizeof(mv_result));
         print_result = true;
+        goto measure_end;
+    }
+
+    if (!calc_mv(&signal_result, &mv_result))
+    {
+        error_text = "[MEAS] mv failed\r\n";
         goto measure_end;
     }
 
@@ -440,19 +602,30 @@ static void task_measure(app_view_t view)
     }
 
     hmi_show_result();
-    if (plot_ok && (!hmi_wave_send()))
+    if (!plot_ok)
+    {
+        error_text = "[MEAS] plot failed\r\n";
+    }
+    else if (!hmi_wave_send())
     {
         error_text = "[HMI] addt failed\r\n";
+    }
+    else
+    {
+        show_time = true;
     }
     print_result = true;
 
 measure_end:
     measure_ms = HAL_GetTick() - start_tick;
-    (void)snprintf(cmd,
-                   sizeof(cmd),
-                   "t_tim.txt=\"%lu ms\"",
-                   (unsigned long)measure_ms);
-    HMI_Send_Cmd(cmd);
+    if (show_time)
+    {
+        (void)snprintf(cmd,
+                       sizeof(cmd),
+                       "t_tim.txt=\"%lu ms\"",
+                       (unsigned long)measure_ms);
+        HMI_Send_Cmd(cmd);
+    }
     if (error_text != NULL)
     {
         Debug_printf("%s", error_text);
