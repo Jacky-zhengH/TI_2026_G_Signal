@@ -11,7 +11,6 @@
 
 #define ALOG_MAX_COMP        3U
 #define ALOG_MAX_CANDIDATE   8U
-#define ALOG_CAL_MAX         16U
 #define ALOG_ADC_MASK        0x0FFFU
 
 #define ALOG_FREQ_MIN_HZ     10000.0f
@@ -21,14 +20,18 @@ typedef struct
 {
     float freq_hz;
 
+    /*
+     * TODO_CAL: amp_code/rms_code是AD9220侧ADC码值。
+     * 输入端mV必须等整条模拟链实测后再换算，当前不执行补偿。
+     */
     float amp_code;
     float rms_code;
 
-    float amp_mv;
-    float rms_mv;
-
+    /*
+     * TODO_CAL: phase_rad仅用于ADC采样波形重构。
+     * 最终输入端相位需要实测十二阶低通和模拟链相位后修正。
+     */
     float phase_rad;
-    float phase_in_rad;
 
     uint16_t bin;
     uint8_t harmonic;
@@ -37,7 +40,6 @@ typedef struct
 typedef struct
 {
     bool valid;
-    bool calibrated;
 
     float dc_code;
     float min_code;
@@ -47,32 +49,20 @@ typedef struct
 
     float fundamental_hz;
 
+    /*
+     * TODO_CAL: urms_code和upp_code均为ADC侧code域结果。
+     * 当前禁止直接按理论18倍或AD9220理论满量程换算成mV。
+     */
     float urms_code;
     float upp_code;
 
-    float urms_mv;
-    float upp_mv;
-
     float noise_code;
-    float fit_error_code;
 
     uint8_t comp_count;
     signal_comp_t comp[ALOG_MAX_COMP];
 } signal_result_t;
 
-typedef struct
-{
-    uint8_t count;
-    bool phase_valid;
-
-    float freq_hz[ALOG_CAL_MAX];
-    float mv_per_code[ALOG_CAL_MAX];
-    float phase_corr_rad[ALOG_CAL_MAX];
-} alog_cal_t;
-
 bool alog_init(void);
-bool alog_set_cal(const alog_cal_t *cal);
-void alog_clear_cal(void);
 
 bool alog_analyze(const uint32_t *raw,
                   uint32_t count,

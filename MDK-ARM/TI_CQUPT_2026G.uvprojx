@@ -877,16 +877,6 @@
               <FileType>5</FileType>
               <FilePath>..\User\bsp\bsp_ad9220.h</FilePath>
             </File>
-            <File>
-              <FileName>bsp_ad603.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\User\bsp\bsp_ad603.c</FilePath>
-            </File>
-            <File>
-              <FileName>bsp_ad603.h</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\User\bsp\bsp_ad603.h</FilePath>
-            </File>
           </Files>
         </Group>
         <Group>

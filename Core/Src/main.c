@@ -28,7 +28,6 @@
 /* USER CODE BEGIN Includes */
 #include "alog_signal.h"
 #include "app_process.h"
-#include "bsp_ad603.h"
 #include "bsp_ad9220.h"
 /* USER CODE END Includes */
 
@@ -97,6 +96,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART3_UART_Init();
   MX_TIM1_Init();
+  /* Fixed-gain hardware does not use DAC control; keep CubeMX init intact. */
   MX_DAC_Init();
   /* USER CODE BEGIN 2 */
   if (!bsp_ad9220_init())

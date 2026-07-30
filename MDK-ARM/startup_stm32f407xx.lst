@@ -850,10 +850,9 @@ ARM Macro Assembler    Page 14
 
 
 p_stm32f407xx.o -I.\RTE\_TI_CQUPT_2026G -I"D:\Program Files\Keil_v5\packs\ARM\C
-MSIS\5.8.0\CMSIS\Core\Include" --predefine="__EVAL SETA 1" --predefine="__UVISI
-ON_VERSION SETA 536" --predefine="_RTE_ SETA 1" --predefine="STM32F407xx SETA 1
-" --predefine="_RTE_ SETA 1" --list=startup_stm32f407xx.lst startup_stm32f407xx
-.s
+MSIS\5.8.0\CMSIS\Core\Include" --predefine="__UVISION_VERSION SETA 536" --prede
+fine="_RTE_ SETA 1" --predefine="STM32F407xx SETA 1" --predefine="_RTE_ SETA 1"
+ --list=startup_stm32f407xx.lst startup_stm32f407xx.s
 
 
 
@@ -1957,4 +1956,4 @@ Symbol: __use_two_region_memory
       None
 Comment: __use_two_region_memory unused
 3 symbols
-449 symbols in table
+448 symbols in table
