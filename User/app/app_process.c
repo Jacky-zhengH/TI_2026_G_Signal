@@ -28,6 +28,7 @@ static volatile uint8_t hmi_reply_code = 0;
 #define APP_SPEC_RIGHT_X 500U
 #define APP_CAL_COUNT 13U
 #define APP_REBUILD_POINTS 2048U
+#define APP_ZERO_PHASE_ENABLE 1U
 
 #ifndef ARM_MATH_PI
 #define ARM_MATH_PI 3.14159265358979323846f
@@ -47,6 +48,8 @@ typedef struct
     float rel_phase_rad[ALOG_MAX_COMP];
     float urms_mv;
     float upp_mv;
+    float rebuild_min_mv;
+    float rebuild_max_mv;
 } app_mv_result_t;
 
 /*
@@ -94,6 +97,7 @@ static signal_result_t signal_result;
 static app_mv_result_t mv_result;
 static float plot_float[APP_PLOT_COUNT];
 static uint8_t plot_byte[APP_PLOT_COUNT];
+static float zero_wave_buf[APP_REBUILD_POINTS];
 
 //=========================================================================================================
 // 1. 基础功能函数
@@ -226,6 +230,7 @@ static float wrap_pi(float phase)
     return phase;
 }
 
+#if !APP_ZERO_PHASE_ENABLE
 static float rebuild_value(const signal_result_t *result,
                            const app_mv_result_t *mv,
                            float base_phase)
@@ -243,15 +248,57 @@ static float rebuild_value(const signal_result_t *result,
     }
     return wave;
 }
+#endif
+
+static bool signal_rebuild_zero_phase(
+    const uint8_t *harmonic,
+    const float *amp_mv,
+    uint8_t comp_count,
+    float *wave_buffer,
+    uint32_t count)
+{
+    uint32_t n;
+    uint32_t i;
+    float phase;
+    float wave;
+
+    if ((harmonic == NULL) ||
+        (amp_mv == NULL) ||
+        (wave_buffer == NULL) ||
+        (comp_count == 0U) ||
+        (comp_count > ALOG_MAX_COMP) ||
+        (count == 0U))
+    {
+        return false;
+    }
+
+    for (n = 0U; n < count; n++)
+    {
+        phase = 2.0f * ARM_MATH_PI * (float)n /
+                (float)count;
+        wave = 0.0f;
+        for (i = 0U; i < comp_count; i++)
+        {
+            wave += amp_mv[i] *
+                    arm_sin_f32(
+                        (float)harmonic[i] * phase);
+        }
+        wave_buffer[n] = wave;
+    }
+    return true;
+}
 
 static bool calc_mv(const signal_result_t *result,
                     app_mv_result_t *mv)
 {
     uint32_t i;
     uint32_t point;
+    uint8_t harmonic[ALOG_MAX_COMP];
     float gain;
     float sum_sq = 0.0f;
+#if !APP_ZERO_PHASE_ENABLE
     float base_phase;
+#endif
     float wave;
     float min_wave = FLT_MAX;
     float max_wave = -FLT_MAX;
@@ -273,6 +320,7 @@ static bool calc_mv(const signal_result_t *result,
             result->comp[i].amp_code * gain;
         mv->rms_mv[i] =
             result->comp[i].rms_code * gain;
+        harmonic[i] = result->comp[i].harmonic;
         sum_sq += mv->rms_mv[i] * mv->rms_mv[i];
     }
     mv->urms_mv = sqrtf(sum_sq);
@@ -293,6 +341,29 @@ static bool calc_mv(const signal_result_t *result,
                 result->comp[0].phase_rad);
     }
 
+#if APP_ZERO_PHASE_ENABLE
+    if (!signal_rebuild_zero_phase(harmonic,
+                                   mv->amp_mv,
+                                   result->comp_count,
+                                   zero_wave_buf,
+                                   APP_REBUILD_POINTS))
+    {
+        return false;
+    }
+
+    for (point = 0U; point < APP_REBUILD_POINTS; point++)
+    {
+        wave = zero_wave_buf[point];
+        if (wave < min_wave)
+        {
+            min_wave = wave;
+        }
+        if (wave > max_wave)
+        {
+            max_wave = wave;
+        }
+    }
+#else
     for (point = 0U; point < APP_REBUILD_POINTS; point++)
     {
         base_phase =
@@ -309,7 +380,10 @@ static bool calc_mv(const signal_result_t *result,
             max_wave = wave;
         }
     }
+#endif
 
+    mv->rebuild_min_mv = min_wave;
+    mv->rebuild_max_mv = max_wave;
     mv->upp_mv = max_wave - min_wave;
     return true;
 }
@@ -365,8 +439,11 @@ static bool hmi_wave_send(void)
 static bool make_wave(uint8_t cycles)
 {
     uint32_t i;
+    uint32_t source;
     int32_t value;
+#if !APP_ZERO_PHASE_ENABLE
     float base_phase;
+#endif
     float scale = 0.0f;
     float wave;
 
@@ -388,6 +465,13 @@ static bool make_wave(uint8_t cycles)
 
     for (i = 0U; i < APP_PLOT_COUNT; i++)
     {
+#if APP_ZERO_PHASE_ENABLE
+        source = (uint32_t)cycles * i *
+                 APP_REBUILD_POINTS /
+                 (APP_PLOT_COUNT - 1U);
+        source %= APP_REBUILD_POINTS;
+        wave = zero_wave_buf[source];
+#else
         base_phase =
             2.0f * ARM_MATH_PI * (float)cycles *
             (float)i /
@@ -395,6 +479,7 @@ static bool make_wave(uint8_t cycles)
         wave = rebuild_value(&signal_result,
                              &mv_result,
                              base_phase);
+#endif
         plot_float[i] = wave / scale;
 
         value = (int32_t)(128.5f +
@@ -596,6 +681,24 @@ static void debug_measure(uint32_t time_ms)
         Debug_printf("rel_phase: %.6f rad\r\n",
                      mv_result.rel_phase_rad[i]);
     }
+
+    Debug_printf("\r\n===== ZERO PHASE =====\r\n");
+    Debug_printf("comp_count: %u\r\n",
+                 (unsigned int)signal_result.comp_count);
+    for (i = 0U; i < signal_result.comp_count; i++)
+    {
+        Debug_printf("\r\nH%u:\r\n",
+                     (unsigned int)
+                     signal_result.comp[i].harmonic);
+        Debug_printf("amp: %.3f mV\r\n",
+                     mv_result.amp_mv[i]);
+    }
+    Debug_printf("\r\nrebuild_max: %.3f mV\r\n",
+                 mv_result.rebuild_max_mv);
+    Debug_printf("rebuild_min: %.3f mV\r\n",
+                 mv_result.rebuild_min_mv);
+    Debug_printf("rebuild_upp: %.3f mV\r\n",
+                 mv_result.upp_mv);
 
     Debug_printf("\r\n=============================\r\n");
 }

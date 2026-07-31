@@ -3,7 +3,7 @@
 <title>Static Call Graph - [TI_CQUPT_2026G\TI_CQUPT_2026G.axf]</title></head>
 <body><HR>
 <H1>Static Call Graph for image TI_CQUPT_2026G\TI_CQUPT_2026G.axf</H1><HR>
-<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060960: Last Updated: Fri Jul 31 20:35:28 2026
+<BR><P>#&#060CALLGRAPH&#062# ARM Linker, 5060960: Last Updated: Fri Jul 31 21:14:48 2026
 <BR><P>
 <H3>Maximum Stack Usage =        704 bytes + Unknown(Functions without stacksize, Cycles, Untraceable Function Pointers)</H3><H3>
 Call chain for Maximum Stack Depth:</H3>
@@ -1156,7 +1156,6 @@ Global Symbols
 <BR><BR>[Called By]<UL><LI><a href="#[13e]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;alog_init
 <LI><a href="#[13c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;fit_components
 <LI><a href="#[13d]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;calc_result
-<LI><a href="#[145]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;rebuild_value
 </UL>
 
 <P><STRONG><a name="[c5]"></a>arm_radix8_butterfly_f32</STRONG> (Thumb, 1458 bytes, Stack size 232 bytes, arm_cfft_radix8_f32.o(.text.arm_radix8_butterfly_f32))
@@ -1183,6 +1182,7 @@ Global Symbols
 
 <P><STRONG><a name="[14b]"></a>arm_sin_f32</STRONG> (Thumb, 144 bytes, Stack size 0 bytes, arm_sin_f32.o(.text.arm_sin_f32))
 <BR><BR>[Called By]<UL><LI><a href="#[13c]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;fit_components
+<LI><a href="#[145]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;signal_rebuild_zero_phase
 </UL>
 
 <P><STRONG><a name="[d1]"></a>merge_rfft_f32</STRONG> (Thumb, 180 bytes, Stack size 8 bytes, arm_rfft_fast_f32.o(.text.merge_rfft_f32))
@@ -2177,10 +2177,10 @@ Local Symbols
 <BR><BR>[Called By]<UL><LI><a href="#[143]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;calc_mv
 </UL>
 
-<P><STRONG><a name="[143]"></a>calc_mv</STRONG> (Thumb, 310 bytes, Stack size 40 bytes, app_process.o(i.calc_mv))
-<BR><BR>[Stack]<UL><LI>Max Depth = 72<LI>Call Chain = calc_mv &rArr; rebuild_value
+<P><STRONG><a name="[143]"></a>calc_mv</STRONG> (Thumb, 334 bytes, Stack size 48 bytes, app_process.o(i.calc_mv))
+<BR><BR>[Stack]<UL><LI>Max Depth = 88<LI>Call Chain = calc_mv &rArr; signal_rebuild_zero_phase
 </UL>
-<BR>[Calls]<UL><LI><a href="#[145]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;rebuild_value
+<BR>[Calls]<UL><LI><a href="#[145]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;signal_rebuild_zero_phase
 <LI><a href="#[144]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;cal_gain
 <LI><a href="#[133]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__hardfp_sqrtf
 <LI><a href="#[e0]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__aeabi_memclr4
@@ -2188,7 +2188,7 @@ Local Symbols
 <BR>[Called By]<UL><LI><a href="#[da]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;task_measure
 </UL>
 
-<P><STRONG><a name="[147]"></a>debug_measure</STRONG> (Thumb, 480 bytes, Stack size 24 bytes, app_process.o(i.debug_measure))
+<P><STRONG><a name="[147]"></a>debug_measure</STRONG> (Thumb, 608 bytes, Stack size 24 bytes, app_process.o(i.debug_measure))
 <BR><BR>[Stack]<UL><LI>Max Depth = 176 + Unknown Stack Size
 <LI>Call Chain = debug_measure &rArr; Debug_printf &rArr; vsnprintf &rArr; _printf_char_common &rArr; __printf
 </UL>
@@ -2237,21 +2237,18 @@ Local Symbols
 <BR>[Called By]<UL><LI><a href="#[da]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;task_measure
 </UL>
 
-<P><STRONG><a name="[150]"></a>make_wave</STRONG> (Thumb, 196 bytes, Stack size 48 bytes, app_process.o(i.make_wave))
-<BR><BR>[Stack]<UL><LI>Max Depth = 80<LI>Call Chain = make_wave &rArr; rebuild_value
-</UL>
-<BR>[Calls]<UL><LI><a href="#[145]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;rebuild_value
+<P><STRONG><a name="[150]"></a>make_wave</STRONG> (Thumb, 160 bytes, Stack size 16 bytes, app_process.o(i.make_wave))
+<BR><BR>[Stack]<UL><LI>Max Depth = 16<LI>Call Chain = make_wave
 </UL>
 <BR>[Called By]<UL><LI><a href="#[da]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;task_measure
 </UL>
 
-<P><STRONG><a name="[145]"></a>rebuild_value</STRONG> (Thumb, 90 bytes, Stack size 32 bytes, app_process.o(i.rebuild_value))
-<BR><BR>[Stack]<UL><LI>Max Depth = 32<LI>Call Chain = rebuild_value
+<P><STRONG><a name="[145]"></a>signal_rebuild_zero_phase</STRONG> (Thumb, 148 bytes, Stack size 40 bytes, app_process.o(i.signal_rebuild_zero_phase))
+<BR><BR>[Stack]<UL><LI>Max Depth = 40<LI>Call Chain = signal_rebuild_zero_phase
 </UL>
-<BR>[Calls]<UL><LI><a href="#[140]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;arm_cos_f32
+<BR>[Calls]<UL><LI><a href="#[14b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;arm_sin_f32
 </UL>
-<BR>[Called By]<UL><LI><a href="#[150]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;make_wave
-<LI><a href="#[143]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;calc_mv
+<BR>[Called By]<UL><LI><a href="#[143]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;calc_mv
 </UL>
 
 <P><STRONG><a name="[da]"></a>task_measure</STRONG> (Thumb, 210 bytes, Stack size 72 bytes, app_process.o(i.task_measure))
@@ -2287,8 +2284,8 @@ Local Symbols
 <P><STRONG><a name="[13d]"></a>calc_result</STRONG> (Thumb, 228 bytes, Stack size 56 bytes, alog_signal.o(i.calc_result))
 <BR><BR>[Stack]<UL><LI>Max Depth = 80<LI>Call Chain = calc_result &rArr; __hardfp_sqrtf &rArr; __set_errno
 </UL>
-<BR>[Calls]<UL><LI><a href="#[146]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;valid_float
-<LI><a href="#[140]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;arm_cos_f32
+<BR>[Calls]<UL><LI><a href="#[140]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;arm_cos_f32
+<LI><a href="#[146]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;valid_float
 <LI><a href="#[133]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__hardfp_sqrtf
 </UL>
 <BR>[Called By]<UL><LI><a href="#[136]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;alog_analyze
@@ -2331,9 +2328,9 @@ Local Symbols
 <P><STRONG><a name="[13c]"></a>fit_components</STRONG> (Thumb, 448 bytes, Stack size 88 bytes, alog_signal.o(i.fit_components))
 <BR><BR>[Stack]<UL><LI>Max Depth = 128<LI>Call Chain = fit_components &rArr; __hardfp_atan2f &rArr; __set_errno
 </UL>
-<BR>[Calls]<UL><LI><a href="#[14b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;arm_sin_f32
+<BR>[Calls]<UL><LI><a href="#[140]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;arm_cos_f32
 <LI><a href="#[146]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;valid_float
-<LI><a href="#[140]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;arm_cos_f32
+<LI><a href="#[14b]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;arm_sin_f32
 <LI><a href="#[133]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__hardfp_sqrtf
 <LI><a href="#[129]">&gt;&gt;</a>&nbsp;&nbsp;&nbsp;__hardfp_atan2f
 </UL>
