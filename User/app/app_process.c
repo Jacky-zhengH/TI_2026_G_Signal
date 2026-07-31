@@ -24,7 +24,8 @@ static volatile uint8_t hmi_reply_code = 0;
 /*测试用*/
 // #define AD9220_TEST_INTERVAL_MS 1000U   //1000ms --> 1s采集
 #define APP_CAPTURE_TIMEOUT_MS 10U
-#define APP_PLOT_COUNT 538U
+#define APP_PLOT_COUNT 521U
+#define APP_SPEC_MARGIN 4U
 #define APP_CAL_COUNT 13U
 #define APP_REBUILD_POINTS 512U
 
@@ -107,10 +108,10 @@ void HMI_Process_Init(void)
     HAL_UART_Receive_IT(&huart1, hmi_rx_buffer, 1U);
 
     HMI_Send_Cmd("cle 2,0");
-    HMI_Send_Cmd("t_tim.txt=\"0 ms\"");
-    HMI_Send_Cmd("n_upp.txt=\"Upp: --- mV\"");
-    HMI_Send_Cmd("n_urms.txt=\"Urms: --- mV\"");
-    HMI_Send_Cmd("n_f0.txt=\"f0: --- kHz\"");
+    HMI_Send_Cmd("t_tim.txt=\"0ms\"");
+    HMI_Send_Cmd("n_upp.txt=\"Upp: ---mV\"");
+    HMI_Send_Cmd("n_urms.txt=\"Urms: ---mV\"");
+    HMI_Send_Cmd("n_f0.txt=\"f0: ---kHz\"");
     HMI_Send_Cmd("t_comp.txt=\"---\"");
 }
 
@@ -296,9 +297,20 @@ static bool hmi_wait(uint8_t code, uint32_t timeout_ms)
 
 static bool hmi_wave_send(void)
 {
+    char cmd[24];
+    int len;
+
     hmi_reply_code = 0U;
     HMI_Send_Cmd("cle 2,0");
-    HMI_Send_Cmd("addt 2,0,538");
+    len = snprintf(cmd,
+                   sizeof(cmd),
+                   "addt 2,0,%u",
+                   (unsigned int)APP_PLOT_COUNT);
+    if ((len <= 0) || (len >= (int)sizeof(cmd)))
+    {
+        return false;
+    }
+    HMI_Send_Cmd(cmd);
     if (!hmi_wait(0xFEU, 200U))
     {
         return false;
@@ -347,76 +359,72 @@ static bool make_wave(uint8_t cycles)
 
 static bool make_spec(void)
 {
-    const float *data;
-    uint32_t data_count;
-    uint32_t start_bin;
-    uint32_t end_bin;
-    uint32_t span;
+    uint32_t i;
     uint32_t point;
-    uint32_t first;
-    uint32_t limit;
-    uint32_t bin;
+    uint32_t point_span;
     int32_t value;
-    float max_mag = 0.0f;
-    float mag;
-    float db;
+    float max_amp = 0.0f;
+    float freq_hz;
+    float freq_span;
 
-    data = alog_get_spectrum(&data_count);
-    if (data == NULL)
+    for (i = 0U; i < signal_result.comp_count; i++)
+    {
+        if ((signal_result.comp[i].harmonic != 0U) &&
+            (mv_result.amp_mv[i] > max_amp))
+        {
+            max_amp = mv_result.amp_mv[i];
+        }
+    }
+    if (max_amp <= 1.0e-6f)
     {
         return false;
     }
 
-    start_bin = (uint32_t)ceilf(ALOG_FREQ_MIN_HZ /
-                                ALOG_BIN_HZ);
-    end_bin = (uint32_t)floorf(ALOG_FREQ_MAX_HZ /
-                               ALOG_BIN_HZ);
-    if (end_bin >= data_count)
-    {
-        return false;
-    }
+    memset(plot_byte, 8, sizeof(plot_byte));
+    freq_span = ALOG_FREQ_MAX_HZ - ALOG_FREQ_MIN_HZ;
+    point_span = APP_PLOT_COUNT - 1U -
+                 2U * APP_SPEC_MARGIN;
 
-    for (bin = start_bin; bin <= end_bin; bin++)
+    for (i = 0U; i < signal_result.comp_count; i++)
     {
-        if (data[bin] > max_mag)
+        if (signal_result.comp[i].harmonic == 0U)
         {
-            max_mag = data[bin];
-        }
-    }
-    if (max_mag <= 1.0e-6f)
-    {
-        return false;
-    }
-
-    span = end_bin - start_bin + 1U;
-    for (point = 0U; point < APP_PLOT_COUNT; point++)
-    {
-        first = start_bin +
-                span * point / APP_PLOT_COUNT;
-        limit = start_bin +
-                span * (point + 1U) / APP_PLOT_COUNT;
-        mag = 0.0f;
-
-        for (bin = first; bin < limit; bin++)
-        {
-            if (data[bin] > mag)
-            {
-                mag = data[bin];
-            }
+            continue;
         }
 
-        db = (mag > 0.0f) ?
-             20.0f * log10f(mag / max_mag) :
-             -60.0f;
-        if (db < -60.0f)
+        freq_hz = signal_result.comp[i].freq_hz;
+        if (freq_hz < ALOG_FREQ_MIN_HZ)
         {
-            db = -60.0f;
+            freq_hz = ALOG_FREQ_MIN_HZ;
+        }
+        else if (freq_hz > ALOG_FREQ_MAX_HZ)
+        {
+            freq_hz = ALOG_FREQ_MAX_HZ;
         }
 
-        plot_float[point] = db;
-        value = (int32_t)(((db + 60.0f) / 60.0f) *
-                          240.0f + 8.5f);
-        plot_byte[point] = (uint8_t)value;
+        /*
+         * TJC曲线批量数据的屏幕位置与发送顺序相反。
+         * 反向写入后，屏幕频率才会从左到右增大。
+         */
+        point = APP_PLOT_COUNT - 1U -
+                APP_SPEC_MARGIN -
+                (uint32_t)(
+                    (freq_hz - ALOG_FREQ_MIN_HZ) *
+                    (float)point_span /
+                    freq_span + 0.5f);
+
+        value = (int32_t)(
+            8.0f +
+            mv_result.amp_mv[i] / max_amp * 239.0f +
+            0.5f);
+        if (value > 247)
+        {
+            value = 247;
+        }
+        if (value > (int32_t)plot_byte[point])
+        {
+            plot_byte[point] = (uint8_t)value;
+        }
     }
     return true;
 }
@@ -430,7 +438,7 @@ static void hmi_show_result(void)
 
     len = snprintf(cmd,
                    sizeof(cmd),
-                   "n_upp.txt=\"Upp: %.1f mV\"",
+                   "n_upp.txt=\"Upp: %.1fmV\"",
                    mv_result.upp_mv);
     if ((len > 0) && (len < (int)sizeof(cmd)))
     {
@@ -439,7 +447,7 @@ static void hmi_show_result(void)
 
     len = snprintf(cmd,
                    sizeof(cmd),
-                   "n_urms.txt=\"Urms: %.1f mV\"",
+                   "n_urms.txt=\"Urms: %.1fmV\"",
                    mv_result.urms_mv);
     if ((len > 0) && (len < (int)sizeof(cmd)))
     {
@@ -448,7 +456,7 @@ static void hmi_show_result(void)
 
     len = snprintf(cmd,
                    sizeof(cmd),
-                   "n_f0.txt=\"f0: %.3f kHz\"",
+                   "n_f0.txt=\"f0: %.3fkHz\"",
                    signal_result.fundamental_hz / 1000.0f);
     if ((len > 0) && (len < (int)sizeof(cmd)))
     {
@@ -462,8 +470,8 @@ static void hmi_show_result(void)
     {
         len = snprintf(&cmd[used],
                        sizeof(cmd) - used,
-                       "%s%u: %.3f kHz %.1f mV",
-                       (i == 0U) ? "" : "\\r",
+                       "%s%u: %.2fkHz %.1fmV",
+                       (i == 0U) ? "" : "\\r\\r",
                        (unsigned int)
                        signal_result.comp[i].harmonic,
                        signal_result.comp[i].freq_hz /
@@ -623,7 +631,7 @@ measure_end:
     {
         (void)snprintf(cmd,
                        sizeof(cmd),
-                       "t_tim.txt=\"%lu ms\"",
+                       "t_tim.txt=\"%lums\"",
                        (unsigned long)measure_ms);
         HMI_Send_Cmd(cmd);
     }
