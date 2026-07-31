@@ -24,10 +24,10 @@ static volatile uint8_t hmi_reply_code = 0;
 /*测试用*/
 // #define AD9220_TEST_INTERVAL_MS 1000U   //1000ms --> 1s采集
 #define APP_CAPTURE_TIMEOUT_MS 10U
-#define APP_PLOT_COUNT 521U
-#define APP_SPEC_MARGIN 4U
+#define APP_PLOT_COUNT 509U
+#define APP_SPEC_RIGHT_X 500U
 #define APP_CAL_COUNT 13U
-#define APP_REBUILD_POINTS 512U
+#define APP_REBUILD_POINTS 2048U
 
 #ifndef ARM_MATH_PI
 #define ARM_MATH_PI 3.14159265358979323846f
@@ -44,6 +44,7 @@ typedef struct
 {
     float amp_mv[ALOG_MAX_COMP];
     float rms_mv[ALOG_MAX_COMP];
+    float rel_phase_rad[ALOG_MAX_COMP];
     float urms_mv;
     float upp_mv;
 } app_mv_result_t;
@@ -212,6 +213,37 @@ static float cal_gain(float freq_hz)
     return cal_mv_per_code[APP_CAL_COUNT - 1U];
 }
 
+static float wrap_pi(float phase)
+{
+    while (phase > ARM_MATH_PI)
+    {
+        phase -= 2.0f * ARM_MATH_PI;
+    }
+    while (phase < -ARM_MATH_PI)
+    {
+        phase += 2.0f * ARM_MATH_PI;
+    }
+    return phase;
+}
+
+static float rebuild_value(const signal_result_t *result,
+                           const app_mv_result_t *mv,
+                           float base_phase)
+{
+    uint32_t i;
+    float wave = 0.0f;
+
+    for (i = 0U; i < result->comp_count; i++)
+    {
+        wave += mv->amp_mv[i] *
+                arm_cos_f32(
+                    (float)result->comp[i].harmonic *
+                    base_phase +
+                    mv->rel_phase_rad[i]);
+    }
+    return wave;
+}
+
 static bool calc_mv(const signal_result_t *result,
                     app_mv_result_t *mv)
 {
@@ -246,24 +278,27 @@ static bool calc_mv(const signal_result_t *result,
     mv->urms_mv = sqrtf(sum_sq);
 
     /*
-     * TODO_PHASE:
-     * 当前只做幅频补偿。
-     * 多谐波Upp仍会受到模拟前端相位响应影响。
+     * 去除随机采集起点造成的公共时间平移。
+     * TODO_PHASE_CAL:
+     * 当前仍是ADC侧相对相位。
+     * 实测模拟链相频响应后，应减去：
+     * phase_chain(fi) - harmonic * phase_chain(f0)。
      */
+    for (i = 0U; i < result->comp_count; i++)
+    {
+        mv->rel_phase_rad[i] =
+            wrap_pi(
+                result->comp[i].phase_rad -
+                (float)result->comp[i].harmonic *
+                result->comp[0].phase_rad);
+    }
+
     for (point = 0U; point < APP_REBUILD_POINTS; point++)
     {
         base_phase =
             2.0f * ARM_MATH_PI * (float)point /
             (float)APP_REBUILD_POINTS;
-        wave = 0.0f;
-        for (i = 0U; i < result->comp_count; i++)
-        {
-            wave += mv->amp_mv[i] *
-                    arm_cos_f32(
-                        (float)result->comp[i].harmonic *
-                        base_phase +
-                        result->comp[i].phase_rad);
-        }
+        wave = rebuild_value(result, mv, base_phase);
 
         if (wave < min_wave)
         {
@@ -331,17 +366,37 @@ static bool make_wave(uint8_t cycles)
 {
     uint32_t i;
     int32_t value;
+    float base_phase;
+    float scale = 0.0f;
+    float wave;
 
-    if (!alog_make_wave(&signal_result,
-                        cycles,
-                        plot_float,
-                        APP_PLOT_COUNT))
+    if ((!signal_result.valid) ||
+        (signal_result.comp_count == 0U) ||
+        (cycles == 0U))
+    {
+        return false;
+    }
+
+    for (i = 0U; i < signal_result.comp_count; i++)
+    {
+        scale += mv_result.amp_mv[i];
+    }
+    if (scale <= 0.0f)
     {
         return false;
     }
 
     for (i = 0U; i < APP_PLOT_COUNT; i++)
     {
+        base_phase =
+            2.0f * ARM_MATH_PI * (float)cycles *
+            (float)i /
+            (float)(APP_PLOT_COUNT - 1U);
+        wave = rebuild_value(&signal_result,
+                             &mv_result,
+                             base_phase);
+        plot_float[i] = wave / scale;
+
         value = (int32_t)(128.5f +
                           plot_float[i] * 110.0f);
         if (value < 8)
@@ -361,11 +416,9 @@ static bool make_spec(void)
 {
     uint32_t i;
     uint32_t point;
-    uint32_t point_span;
     int32_t value;
     float max_amp = 0.0f;
     float freq_hz;
-    float freq_span;
 
     for (i = 0U; i < signal_result.comp_count; i++)
     {
@@ -380,10 +433,7 @@ static bool make_spec(void)
         return false;
     }
 
-    memset(plot_byte, 8, sizeof(plot_byte));
-    freq_span = ALOG_FREQ_MAX_HZ - ALOG_FREQ_MIN_HZ;
-    point_span = APP_PLOT_COUNT - 1U -
-                 2U * APP_SPEC_MARGIN;
+    memset(plot_byte, 0, sizeof(plot_byte));
 
     for (i = 0U; i < signal_result.comp_count; i++)
     {
@@ -393,9 +443,9 @@ static bool make_spec(void)
         }
 
         freq_hz = signal_result.comp[i].freq_hz;
-        if (freq_hz < ALOG_FREQ_MIN_HZ)
+        if (freq_hz < 0.0f)
         {
-            freq_hz = ALOG_FREQ_MIN_HZ;
+            freq_hz = 0.0f;
         }
         else if (freq_hz > ALOG_FREQ_MAX_HZ)
         {
@@ -407,15 +457,13 @@ static bool make_spec(void)
          * 反向写入后，屏幕频率才会从左到右增大。
          */
         point = APP_PLOT_COUNT - 1U -
-                APP_SPEC_MARGIN -
                 (uint32_t)(
-                    (freq_hz - ALOG_FREQ_MIN_HZ) *
-                    (float)point_span /
-                    freq_span + 0.5f);
+                    freq_hz *
+                    (float)APP_SPEC_RIGHT_X /
+                    ALOG_FREQ_MAX_HZ + 0.5f);
 
         value = (int32_t)(
-            8.0f +
-            mv_result.amp_mv[i] / max_amp * 239.0f +
+            mv_result.amp_mv[i] / max_amp * 247.0f +
             0.5f);
         if (value > 247)
         {
@@ -545,6 +593,8 @@ static void debug_measure(uint32_t time_ms)
                      mv_result.rms_mv[i]);
         Debug_printf("phase: %.6f rad\r\n",
                      signal_result.comp[i].phase_rad);
+        Debug_printf("rel_phase: %.6f rad\r\n",
+                     mv_result.rel_phase_rad[i]);
     }
 
     Debug_printf("\r\n=============================\r\n");

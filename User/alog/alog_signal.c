@@ -10,6 +10,7 @@
 #define ALOG_INV_SQRT_TWO       0.70710678f
 #define ALOG_NOISE_MULTIPLE     6.0f
 #define ALOG_PEAK_REL_MIN       0.01f
+#define ALOG_BASE_REL_MIN       0.10f
 #define ALOG_PEAK_GUARD_BINS    3U
 #define ALOG_FREQ_TOL_BINS      2.0f
 #define ALOG_HARMONIC_MAX       50U
@@ -263,6 +264,17 @@ static uint8_t select_model(const peak_t *peak,
 
     for (base = 0U; base < peak_count; base++)
     {
+        /*
+         * 信号源设置限制为谐波幅值不大于基波。
+         * 排除幅值极弱的假基波，避免弱混叠杂散与强峰
+         * 偶然组成整数倍关系。
+         */
+        if (peak[base].mag_code <
+            peak[0].mag_code * ALOG_BASE_REL_MIN)
+        {
+            continue;
+        }
+
         top_count = 0U;
         base_energy =
             peak[base].mag_code * peak[base].mag_code;
