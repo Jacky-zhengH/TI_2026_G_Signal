@@ -464,7 +464,8 @@ static void hmi_show_result(void)
                        sizeof(cmd) - used,
                        "%s%u: %.3f kHz %.1f mV",
                        (i == 0U) ? "" : "\\r",
-                       (unsigned int)(i + 1U),
+                       (unsigned int)
+                       signal_result.comp[i].harmonic,
                        signal_result.comp[i].freq_hz /
                        1000.0f,
                        mv_result.amp_mv[i]);

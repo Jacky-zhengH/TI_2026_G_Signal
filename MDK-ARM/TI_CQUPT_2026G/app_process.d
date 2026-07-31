@@ -37,6 +37,10 @@ ti_cqupt_2026g\app_process.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_
 ti_cqupt_2026g\app_process.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h
 ti_cqupt_2026g\app_process.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h
 ti_cqupt_2026g\app_process.o: ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h
+ti_cqupt_2026g\app_process.o: ../Middlewares/ST/ARM/DSP/Inc/arm_math.h
+ti_cqupt_2026g\app_process.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
 ti_cqupt_2026g\app_process.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\math.h
+ti_cqupt_2026g\app_process.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\float.h
+ti_cqupt_2026g\app_process.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\limits.h
 ti_cqupt_2026g\app_process.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdarg.h
 ti_cqupt_2026g\app_process.o: D:\Program Files\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
