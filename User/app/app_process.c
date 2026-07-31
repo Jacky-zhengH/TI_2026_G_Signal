@@ -24,9 +24,10 @@ static volatile uint8_t hmi_reply_code = 0;
 /*测试用*/
 // #define AD9220_TEST_INTERVAL_MS 1000U   //1000ms --> 1s采集
 #define APP_CAPTURE_TIMEOUT_MS 10U
-#define APP_PLOT_COUNT 538U
+#define APP_PLOT_COUNT 509U
+#define APP_SPEC_RIGHT_X 500U
 #define APP_CAL_COUNT 13U
-#define APP_REBUILD_POINTS 512U
+#define APP_REBUILD_POINTS 2048U
 
 #ifndef ARM_MATH_PI
 #define ARM_MATH_PI 3.14159265358979323846f
@@ -43,6 +44,7 @@ typedef struct
 {
     float amp_mv[ALOG_MAX_COMP];
     float rms_mv[ALOG_MAX_COMP];
+    float rel_phase_rad[ALOG_MAX_COMP];
     float urms_mv;
     float upp_mv;
 } app_mv_result_t;
@@ -107,10 +109,10 @@ void HMI_Process_Init(void)
     HAL_UART_Receive_IT(&huart1, hmi_rx_buffer, 1U);
 
     HMI_Send_Cmd("cle 2,0");
-    HMI_Send_Cmd("t_tim.txt=\"0 ms\"");
-    HMI_Send_Cmd("n_upp.txt=\"Upp: --- mV\"");
-    HMI_Send_Cmd("n_urms.txt=\"Urms: --- mV\"");
-    HMI_Send_Cmd("n_f0.txt=\"f0: --- kHz\"");
+    HMI_Send_Cmd("t_tim.txt=\"0ms\"");
+    HMI_Send_Cmd("n_upp.txt=\"Upp: ---mV\"");
+    HMI_Send_Cmd("n_urms.txt=\"Urms: ---mV\"");
+    HMI_Send_Cmd("n_f0.txt=\"f0: ---kHz\"");
     HMI_Send_Cmd("t_comp.txt=\"---\"");
 }
 
@@ -211,6 +213,37 @@ static float cal_gain(float freq_hz)
     return cal_mv_per_code[APP_CAL_COUNT - 1U];
 }
 
+static float wrap_pi(float phase)
+{
+    while (phase > ARM_MATH_PI)
+    {
+        phase -= 2.0f * ARM_MATH_PI;
+    }
+    while (phase < -ARM_MATH_PI)
+    {
+        phase += 2.0f * ARM_MATH_PI;
+    }
+    return phase;
+}
+
+static float rebuild_value(const signal_result_t *result,
+                           const app_mv_result_t *mv,
+                           float base_phase)
+{
+    uint32_t i;
+    float wave = 0.0f;
+
+    for (i = 0U; i < result->comp_count; i++)
+    {
+        wave += mv->amp_mv[i] *
+                arm_cos_f32(
+                    (float)result->comp[i].harmonic *
+                    base_phase +
+                    mv->rel_phase_rad[i]);
+    }
+    return wave;
+}
+
 static bool calc_mv(const signal_result_t *result,
                     app_mv_result_t *mv)
 {
@@ -245,24 +278,27 @@ static bool calc_mv(const signal_result_t *result,
     mv->urms_mv = sqrtf(sum_sq);
 
     /*
-     * TODO_PHASE:
-     * 当前只做幅频补偿。
-     * 多谐波Upp仍会受到模拟前端相位响应影响。
+     * 去除随机采集起点造成的公共时间平移。
+     * TODO_PHASE_CAL:
+     * 当前仍是ADC侧相对相位。
+     * 实测模拟链相频响应后，应减去：
+     * phase_chain(fi) - harmonic * phase_chain(f0)。
      */
+    for (i = 0U; i < result->comp_count; i++)
+    {
+        mv->rel_phase_rad[i] =
+            wrap_pi(
+                result->comp[i].phase_rad -
+                (float)result->comp[i].harmonic *
+                result->comp[0].phase_rad);
+    }
+
     for (point = 0U; point < APP_REBUILD_POINTS; point++)
     {
         base_phase =
             2.0f * ARM_MATH_PI * (float)point /
             (float)APP_REBUILD_POINTS;
-        wave = 0.0f;
-        for (i = 0U; i < result->comp_count; i++)
-        {
-            wave += mv->amp_mv[i] *
-                    arm_cos_f32(
-                        (float)result->comp[i].harmonic *
-                        base_phase +
-                        result->comp[i].phase_rad);
-        }
+        wave = rebuild_value(result, mv, base_phase);
 
         if (wave < min_wave)
         {
@@ -296,9 +332,20 @@ static bool hmi_wait(uint8_t code, uint32_t timeout_ms)
 
 static bool hmi_wave_send(void)
 {
+    char cmd[24];
+    int len;
+
     hmi_reply_code = 0U;
     HMI_Send_Cmd("cle 2,0");
-    HMI_Send_Cmd("addt 2,0,538");
+    len = snprintf(cmd,
+                   sizeof(cmd),
+                   "addt 2,0,%u",
+                   (unsigned int)APP_PLOT_COUNT);
+    if ((len <= 0) || (len >= (int)sizeof(cmd)))
+    {
+        return false;
+    }
+    HMI_Send_Cmd(cmd);
     if (!hmi_wait(0xFEU, 200U))
     {
         return false;
@@ -319,17 +366,37 @@ static bool make_wave(uint8_t cycles)
 {
     uint32_t i;
     int32_t value;
+    float base_phase;
+    float scale = 0.0f;
+    float wave;
 
-    if (!alog_make_wave(&signal_result,
-                        cycles,
-                        plot_float,
-                        APP_PLOT_COUNT))
+    if ((!signal_result.valid) ||
+        (signal_result.comp_count == 0U) ||
+        (cycles == 0U))
+    {
+        return false;
+    }
+
+    for (i = 0U; i < signal_result.comp_count; i++)
+    {
+        scale += mv_result.amp_mv[i];
+    }
+    if (scale <= 0.0f)
     {
         return false;
     }
 
     for (i = 0U; i < APP_PLOT_COUNT; i++)
     {
+        base_phase =
+            2.0f * ARM_MATH_PI * (float)cycles *
+            (float)i /
+            (float)(APP_PLOT_COUNT - 1U);
+        wave = rebuild_value(&signal_result,
+                             &mv_result,
+                             base_phase);
+        plot_float[i] = wave / scale;
+
         value = (int32_t)(128.5f +
                           plot_float[i] * 110.0f);
         if (value < 8)
@@ -347,76 +414,65 @@ static bool make_wave(uint8_t cycles)
 
 static bool make_spec(void)
 {
-    const float *data;
-    uint32_t data_count;
-    uint32_t start_bin;
-    uint32_t end_bin;
-    uint32_t span;
+    uint32_t i;
     uint32_t point;
-    uint32_t first;
-    uint32_t limit;
-    uint32_t bin;
     int32_t value;
-    float max_mag = 0.0f;
-    float mag;
-    float db;
+    float max_amp = 0.0f;
+    float freq_hz;
 
-    data = alog_get_spectrum(&data_count);
-    if (data == NULL)
+    for (i = 0U; i < signal_result.comp_count; i++)
+    {
+        if ((signal_result.comp[i].harmonic != 0U) &&
+            (mv_result.amp_mv[i] > max_amp))
+        {
+            max_amp = mv_result.amp_mv[i];
+        }
+    }
+    if (max_amp <= 1.0e-6f)
     {
         return false;
     }
 
-    start_bin = (uint32_t)ceilf(ALOG_FREQ_MIN_HZ /
-                                ALOG_BIN_HZ);
-    end_bin = (uint32_t)floorf(ALOG_FREQ_MAX_HZ /
-                               ALOG_BIN_HZ);
-    if (end_bin >= data_count)
-    {
-        return false;
-    }
+    memset(plot_byte, 0, sizeof(plot_byte));
 
-    for (bin = start_bin; bin <= end_bin; bin++)
+    for (i = 0U; i < signal_result.comp_count; i++)
     {
-        if (data[bin] > max_mag)
+        if (signal_result.comp[i].harmonic == 0U)
         {
-            max_mag = data[bin];
-        }
-    }
-    if (max_mag <= 1.0e-6f)
-    {
-        return false;
-    }
-
-    span = end_bin - start_bin + 1U;
-    for (point = 0U; point < APP_PLOT_COUNT; point++)
-    {
-        first = start_bin +
-                span * point / APP_PLOT_COUNT;
-        limit = start_bin +
-                span * (point + 1U) / APP_PLOT_COUNT;
-        mag = 0.0f;
-
-        for (bin = first; bin < limit; bin++)
-        {
-            if (data[bin] > mag)
-            {
-                mag = data[bin];
-            }
+            continue;
         }
 
-        db = (mag > 0.0f) ?
-             20.0f * log10f(mag / max_mag) :
-             -60.0f;
-        if (db < -60.0f)
+        freq_hz = signal_result.comp[i].freq_hz;
+        if (freq_hz < 0.0f)
         {
-            db = -60.0f;
+            freq_hz = 0.0f;
+        }
+        else if (freq_hz > ALOG_FREQ_MAX_HZ)
+        {
+            freq_hz = ALOG_FREQ_MAX_HZ;
         }
 
-        plot_float[point] = db;
-        value = (int32_t)(((db + 60.0f) / 60.0f) *
-                          240.0f + 8.5f);
-        plot_byte[point] = (uint8_t)value;
+        /*
+         * TJC曲线批量数据的屏幕位置与发送顺序相反。
+         * 反向写入后，屏幕频率才会从左到右增大。
+         */
+        point = APP_PLOT_COUNT - 1U -
+                (uint32_t)(
+                    freq_hz *
+                    (float)APP_SPEC_RIGHT_X /
+                    ALOG_FREQ_MAX_HZ + 0.5f);
+
+        value = (int32_t)(
+            mv_result.amp_mv[i] / max_amp * 247.0f +
+            0.5f);
+        if (value > 247)
+        {
+            value = 247;
+        }
+        if (value > (int32_t)plot_byte[point])
+        {
+            plot_byte[point] = (uint8_t)value;
+        }
     }
     return true;
 }
@@ -430,7 +486,7 @@ static void hmi_show_result(void)
 
     len = snprintf(cmd,
                    sizeof(cmd),
-                   "n_upp.txt=\"Upp: %.1f mV\"",
+                   "n_upp.txt=\"Upp: %.1fmV\"",
                    mv_result.upp_mv);
     if ((len > 0) && (len < (int)sizeof(cmd)))
     {
@@ -439,7 +495,7 @@ static void hmi_show_result(void)
 
     len = snprintf(cmd,
                    sizeof(cmd),
-                   "n_urms.txt=\"Urms: %.1f mV\"",
+                   "n_urms.txt=\"Urms: %.1fmV\"",
                    mv_result.urms_mv);
     if ((len > 0) && (len < (int)sizeof(cmd)))
     {
@@ -448,7 +504,7 @@ static void hmi_show_result(void)
 
     len = snprintf(cmd,
                    sizeof(cmd),
-                   "n_f0.txt=\"f0: %.3f kHz\"",
+                   "n_f0.txt=\"f0: %.3fkHz\"",
                    signal_result.fundamental_hz / 1000.0f);
     if ((len > 0) && (len < (int)sizeof(cmd)))
     {
@@ -462,8 +518,8 @@ static void hmi_show_result(void)
     {
         len = snprintf(&cmd[used],
                        sizeof(cmd) - used,
-                       "%s%u: %.3f kHz %.1f mV",
-                       (i == 0U) ? "" : "\\r",
+                       "%s%u: %.2fkHz %.1fmV",
+                       (i == 0U) ? "" : "\\r\\r",
                        (unsigned int)
                        signal_result.comp[i].harmonic,
                        signal_result.comp[i].freq_hz /
@@ -537,6 +593,8 @@ static void debug_measure(uint32_t time_ms)
                      mv_result.rms_mv[i]);
         Debug_printf("phase: %.6f rad\r\n",
                      signal_result.comp[i].phase_rad);
+        Debug_printf("rel_phase: %.6f rad\r\n",
+                     mv_result.rel_phase_rad[i]);
     }
 
     Debug_printf("\r\n=============================\r\n");
@@ -623,7 +681,7 @@ measure_end:
     {
         (void)snprintf(cmd,
                        sizeof(cmd),
-                       "t_tim.txt=\"%lu ms\"",
+                       "t_tim.txt=\"%lums\"",
                        (unsigned long)measure_ms);
         HMI_Send_Cmd(cmd);
     }
