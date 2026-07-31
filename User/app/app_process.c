@@ -492,7 +492,12 @@ static bool make_wave(uint8_t cycles)
         {
             value = 247;
         }
-        plot_byte[i] = (uint8_t)value;
+        /*
+         * TJC批量数据在屏幕上的落点顺序相反。
+         * 反向存放后，时间才会从左向右增加。
+         */
+        plot_byte[APP_PLOT_COUNT - 1U - i] =
+            (uint8_t)value;
     }
     return true;
 }
@@ -562,6 +567,11 @@ static bool make_spec(void)
     return true;
 }
 
+static float hmi_freq_khz(float freq_hz)
+{
+    return roundf(freq_hz / 500.0f) * 0.5f;
+}
+
 static void hmi_show_result(void)
 {
     char cmd[200];
@@ -589,8 +599,9 @@ static void hmi_show_result(void)
 
     len = snprintf(cmd,
                    sizeof(cmd),
-                   "n_f0.txt=\"f0: %.3fkHz\"",
-                   signal_result.fundamental_hz / 1000.0f);
+                   "n_f0.txt=\"f0: %.1fkHz\"",
+                   hmi_freq_khz(
+                       signal_result.fundamental_hz));
     if ((len > 0) && (len < (int)sizeof(cmd)))
     {
         HMI_Send_Cmd(cmd);
@@ -603,12 +614,12 @@ static void hmi_show_result(void)
     {
         len = snprintf(&cmd[used],
                        sizeof(cmd) - used,
-                       "%s%u: %.2fkHz %.1fmV",
+                       "%s%u: %.1fkHz %.1fmV",
                        (i == 0U) ? "" : "\\r\\r",
                        (unsigned int)
                        signal_result.comp[i].harmonic,
-                       signal_result.comp[i].freq_hz /
-                       1000.0f,
+                       hmi_freq_khz(
+                           signal_result.comp[i].freq_hz),
                        mv_result.amp_mv[i]);
         if ((len <= 0) ||
             (len >= (int)(sizeof(cmd) - used)))
